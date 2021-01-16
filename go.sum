@@ -1,2 +1,4 @@
+github.com/go-httpproxy/httpproxy v0.0.0-20180417134941-6977c68bf38e h1:ZWrG9Qs9xKF9638OVBT9Dd84CduxRWKX1/ZuwDI9e5o=
+github.com/go-httpproxy/httpproxy v0.0.0-20180417134941-6977c68bf38e/go.mod h1:Ftx0ecWwj8tX+5XPIE2KldKlneCsk9xMEaVpNbFRSt4=
 github.com/spf13/pflag v1.0.5 h1:iy+VFUOCP1a+8yFto/drg2CJ5u0yRoB7fZw3DKv/JXA=
 github.com/spf13/pflag v1.0.5/go.mod h1:McXfInJRrz4CZXVZOBLb0bTZqETkiAhM9Iw0y3An2Bg=
