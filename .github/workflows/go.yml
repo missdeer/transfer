@@ -162,7 +162,3 @@ jobs:
         name: transfer-windows-386
         # Directory containing files to upload
         path: windows-386
-
-    - name: Remove old artifacts
-      run: |
-        linux-amd64/transfer -p github -u missdeer -t ${{ secrets.GH_TOKEN }} -r transfer -k 0 -a delete
