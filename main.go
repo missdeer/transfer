@@ -8,6 +8,8 @@ import (
 	"log"
 	"mime/multipart"
 	"net/http"
+	"net/http/httputil"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -113,6 +115,26 @@ func printExamples() {
 	fmt.Println("\ttransfer -m relay 8080:172.16.0.1:8080 8081:172.16.0.2:8080 8082:172.16.0.3:8080")
 }
 
+func createReverseProxy(listen string, target string) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+
+		url, err := url.Parse(target)
+		if err != nil {
+			log.Println(target, err)
+			return
+		}
+
+		proxy := httputil.NewSingleHostReverseProxy(url)
+		proxy.ServeHTTP(w, r)
+	})
+	s := http.Server{
+		Addr:    listen,
+		Handler: mux,
+	}
+	log.Fatal(s.ListenAndServe())
+}
+
 func main() {
 	help := false
 	flag.StringVarP(&workMode, "mode", "m", "server", "work mode, candidates: server, client, proxy, relay")
@@ -136,19 +158,28 @@ func main() {
 			uploadFileRequest(serverAddr, f)
 		}
 	case "server":
-		log.Println("Starting http server at", listenAddr, ", please don't close it if you are not sure what it does.")
+		log.Println("Starting http server at", listenAddr, ", please don't close it if you are not sure what it is doing.")
 
 		http.HandleFunc("/uploadFile", uploadFileHandler)
-		fs := http.FileServer(http.Dir(fileServePath))
-		http.Handle("/", fs)
+		http.Handle("/", http.FileServer(http.Dir(fileServePath)))
 		log.Fatal(http.ListenAndServe(listenAddr, nil))
 	case "proxy":
-		log.Println("Starting http proxy at", listenAddr, ", please don't close it if you are not sure what it does.")
+		log.Println("Starting http proxy at", listenAddr, ", please don't close it if you are not sure what it is doing.")
 	case "relay":
 		args := flag.Args()
-		log.Println("Starting relay server at", strings.Join(args, " "), ", please don't close it if you are not sure what it does.")
+		if len(args) == 0 {
+			log.Fatal("Port mapping is missing.")
+		}
+		log.Println("Starting http reverse proxy at", strings.Join(args, " "), ", please don't close it if you are not sure what it is doing.")
+		for _, a := range args {
+			ss := strings.Split(a, ":")
+			if len(ss) != 3 {
+				log.Println("Drop invalid port mapping entry", a)
+				continue
+			}
+			go createReverseProxy(fmt.Sprintf(":%s", ss[0]), fmt.Sprintf("http://%s:%s", ss[1], ss[2]))
+		}
 	default:
-
 		log.Fatal("Unsupported work mode, available values: server, client, proxy")
 	}
 }
