@@ -5,8 +5,13 @@ import (
 	"log"
 	"net/http"
 	"strings"
+	"sync"
 
 	flag "github.com/spf13/pflag"
+)
+
+const (
+	uploadFormFileName = "originalFile"
 )
 
 var (
@@ -44,6 +49,9 @@ func main() {
 	switch workMode {
 	case "client":
 		args := flag.Args()
+		if len(args) == 0 {
+			log.Fatal("Local file to be uploaded is missing.")
+		}
 		for _, f := range args {
 			uploadFileRequest(serverAddr, f)
 		}
@@ -63,14 +71,18 @@ func main() {
 			log.Fatal("Port mapping is missing.")
 		}
 		log.Println("Starting http reverse proxy at", strings.Join(args, " "), ", please don't close it if you are not sure what it is doing.")
+		var wg sync.WaitGroup
+		wg.Add(len(args))
 		for _, a := range args {
 			ss := strings.Split(a, ":")
 			if len(ss) != 3 {
 				log.Println("Drop invalid port mapping entry", a)
+				wg.Done()
 				continue
 			}
-			go createReverseProxy(fmt.Sprintf(":%s", ss[0]), fmt.Sprintf("http://%s:%s", ss[1], ss[2]))
+			go createReverseProxy(fmt.Sprintf(":%s", ss[0]), fmt.Sprintf("http://%s:%s", ss[1], ss[2]), &wg)
 		}
+		wg.Wait()
 	default:
 		log.Fatal("Unsupported work mode, available values: server, client, proxy")
 	}

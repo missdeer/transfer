@@ -47,7 +47,7 @@ func uploadFileRequest(uri string, filePath string) {
 		"author":      "CUBE SA",
 		"description": fmt.Sprintf("file %s uploaded by CUBE SA", filepath.Base(filePath)),
 	}
-	request, err := newfileUploadRequest(uri, extraParams, "originalFile", filePath)
+	request, err := newfileUploadRequest(uri, extraParams, uploadFormFileName, filePath)
 	if err != nil {
 		log.Fatal(err)
 	}

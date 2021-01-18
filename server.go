@@ -17,7 +17,7 @@ func uploadFileHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	//reading original file
-	file, handler, err := r.FormFile("originalFile")
+	file, handler, err := r.FormFile(uploadFormFileName)
 	if err != nil {
 		fmt.Println("Error Retrieving the File")
 		fmt.Println(err)

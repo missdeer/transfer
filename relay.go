@@ -5,9 +5,10 @@ import (
 	"net/http"
 	"net/http/httputil"
 	"net/url"
+	"sync"
 )
 
-func createReverseProxy(listen string, target string) {
+func createReverseProxy(listen string, target string, wg *sync.WaitGroup) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 
@@ -25,4 +26,5 @@ func createReverseProxy(listen string, target string) {
 		Handler: mux,
 	}
 	log.Fatal(s.ListenAndServe())
+	wg.Done()
 }
