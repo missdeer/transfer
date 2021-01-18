@@ -19,6 +19,7 @@ var (
 	fileServePath string
 	listenAddr    string
 	serverAddr    string
+	protocol      string
 )
 
 func printExamples() {
@@ -32,8 +33,9 @@ func printExamples() {
 
 func main() {
 	help := false
+	flag.StringVarP(&protocol, "protocol", "p", "http", "transfer protocol, candidates: http, kcp")
 	flag.StringVarP(&workMode, "mode", "m", "server", "work mode, candidates: server, client, proxy, relay")
-	flag.StringVarP(&fileServePath, "path", "p", ".", "file serve path, server/client mode only")
+	flag.StringVarP(&fileServePath, "directory", "d", ".", "serve directory path, server/client mode only")
 	flag.StringVarP(&listenAddr, "listen", "l", ":8080", "listen address, server/proxy mode only")
 	flag.StringVarP(&serverAddr, "connect", "c", "", "upload server address, for example: http://172.16.0.1:8080/uploadFile, client mode only")
 	flag.BoolVarP(&help, "help", "h", false, "show this help message")
