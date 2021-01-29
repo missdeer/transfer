@@ -31,8 +31,13 @@ func uploadFileHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	io.Copy(resFile, file)
+	_, err = io.Copy(resFile, file)
 	resFile.Close()
+
+	if err != nil {
+		fmt.Fprintln(w, err)
+		return
+	}
 
 	destFileName := filepath.Join(fileServePath, handler.Filename)
 	os.Rename(tempFileName, destFileName)
