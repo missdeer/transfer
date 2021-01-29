@@ -9,14 +9,13 @@ import (
 )
 
 func uploadFileHandler(w http.ResponseWriter, r *http.Request) {
-
-	//upload size
+	// upload size
 	err := r.ParseMultipartForm(200000) // grab the multipart form
 	if err != nil {
 		fmt.Fprintln(w, err)
 	}
 
-	//reading original file
+	// reading original file
 	file, handler, err := r.FormFile(uploadFormFileName)
 	if err != nil {
 		fmt.Println("Error Retrieving the File")
@@ -25,14 +24,17 @@ func uploadFileHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	defer file.Close()
 
-	resFile, err := os.Create(filepath.Join(fileServePath, handler.Filename))
+	tempFileName := filepath.Join(fileServePath, "."+handler.Filename+"~")
+	resFile, err := os.Create(tempFileName)
 	if err != nil {
 		fmt.Fprintln(w, err)
+		return
 	}
-	defer resFile.Close()
-	if err == nil {
-		io.Copy(resFile, file)
-		defer resFile.Close()
-		fmt.Fprintf(w, "Successfully Uploaded Original File\n")
-	}
+
+	io.Copy(resFile, file)
+	resFile.Close()
+
+	destFileName := filepath.Join(fileServePath, handler.Filename)
+	os.Rename(tempFileName, destFileName)
+	fmt.Fprintf(w, "Successfully Uploaded Original File\n")
 }
