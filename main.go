@@ -21,6 +21,8 @@ var (
 	listenAddr    string
 	serverAddr    string
 	protocol      string
+	certFile      string
+	keyFile       string
 )
 
 func printExamples() {
@@ -37,14 +39,16 @@ func quicHandler() {
 	case "client":
 		args := flag.Args()
 		if len(args) == 0 {
-			log.Fatal("Local file to be uploaded is missing.")
+			// download
+		} else {
+			// upload
 		}
 	case "server":
 		log.Println("Starting quic(http3) server at", listenAddr, ", please don't close it if you are not sure what it is doing.")
 
 		http.HandleFunc("/uploadFile", uploadFileHandler)
 		http.Handle("/", http.FileServer(http.Dir(fileServePath)))
-		log.Fatal(http3.ListenAndServeQUIC(listenAddr, "cert/chain.pem", "cert/privkey.pem", nil))
+		log.Fatal(http3.ListenAndServeQUIC(listenAddr, certFile, keyFile, nil))
 	case "proxy":
 		log.Println("Starting http proxy at", listenAddr, ", please don't close it if you are not sure what it is doing.")
 	case "relay":
@@ -61,10 +65,12 @@ func httpHandler() {
 	case "client":
 		args := flag.Args()
 		if len(args) == 0 {
-			log.Fatal("Local file to be uploaded is missing.")
-		}
-		for _, f := range args {
-			uploadFileRequest(serverAddr, f)
+			// download
+		} else {
+			// upload
+			for _, f := range args {
+				uploadFileRequest(serverAddr, f)
+			}
 		}
 	case "server":
 		log.Println("Starting http server at", listenAddr, ", please don't close it if you are not sure what it is doing.")
@@ -106,6 +112,8 @@ func main() {
 	flag.StringVarP(&fileServePath, "directory", "d", ".", "serve directory path, server/client mode only")
 	flag.StringVarP(&listenAddr, "listen", "l", ":8080", "listen address, server/proxy mode only")
 	flag.StringVarP(&serverAddr, "connect", "c", "", "upload server address, for example: http://172.16.0.1:8080/uploadFile, client mode only")
+	flag.StringVarP(&certFile, "cert", "t", "cert.pem", "SSL certificate file path")
+	flag.StringVarP(&keyFile, "key", "k", "key.pem", "SSL key file path")
 	flag.BoolVarP(&help, "help", "h", false, "show this help message")
 	flag.Parse()
 
@@ -121,6 +129,7 @@ func main() {
 		httpHandler()
 	case "kcp":
 	case "quic", "http3":
+		quicHandler()
 	default:
 		log.Fatal("Unsupported protocol")
 	}
