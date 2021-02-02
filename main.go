@@ -33,7 +33,7 @@ func printExamples() {
 
 func main() {
 	help := false
-	flag.StringVarP(&protocol, "protocol", "p", "http", "transfer protocol, candidates: http, kcp")
+	flag.StringVarP(&protocol, "protocol", "p", "http", "transfer protocol, candidates: http(/http1/http1.1/http2), kcp, quic(/http3)")
 	flag.StringVarP(&workMode, "mode", "m", "server", "work mode, candidates: server, client, proxy, relay")
 	flag.StringVarP(&fileServePath, "directory", "d", ".", "serve directory path, server/client mode only")
 	flag.StringVarP(&listenAddr, "listen", "l", ":8080", "listen address, server/proxy mode only")
