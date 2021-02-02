@@ -23,6 +23,7 @@ var (
 	protocol      string
 	certFile      string
 	keyFile       string
+	outputFile    string
 )
 
 func printExamples() {
@@ -30,6 +31,7 @@ func printExamples() {
 	fmt.Println("\ttransfer")
 	fmt.Println("\ttransfer -m server -l :8888")
 	fmt.Println("\ttransfer -m client -c http://172.16.0.1:8080/uploadFile ~/file-to-upload")
+	fmt.Println("\ttransfer -m client -c http://172.16.0.1:8080/file-to-download -o ~/file-downloaded")
 	fmt.Println("\ttransfer -m proxy")
 	fmt.Println("\ttransfer -m relay 8080:172.16.0.1:8080 8081:172.16.0.2:8080 8082:172.16.0.3:8080")
 }
@@ -38,7 +40,7 @@ func quicHandler() {
 	switch workMode {
 	case "client":
 		args := flag.Args()
-		if len(args) == 0 {
+		if len(args) == 0 && outputFile != "" {
 			// download
 		} else {
 			// upload
@@ -64,7 +66,7 @@ func httpHandler() {
 	switch workMode {
 	case "client":
 		args := flag.Args()
-		if len(args) == 0 {
+		if len(args) == 0 && outputFile != "" {
 			// download
 		} else {
 			// upload
@@ -112,6 +114,7 @@ func main() {
 	flag.StringVarP(&fileServePath, "directory", "d", ".", "serve directory path, server/client mode only")
 	flag.StringVarP(&listenAddr, "listen", "l", ":8080", "listen address, server/proxy mode only")
 	flag.StringVarP(&serverAddr, "connect", "c", "", "upload server address, for example: http://172.16.0.1:8080/uploadFile, client mode only")
+	flag.StringVarP(&outputFile, "output", "o", "", "save downloaded file to local path, client mode only")
 	flag.StringVarP(&certFile, "cert", "t", "cert.pem", "SSL certificate file path")
 	flag.StringVarP(&keyFile, "key", "k", "key.pem", "SSL key file path")
 	flag.BoolVarP(&help, "help", "h", false, "show this help message")
