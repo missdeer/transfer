@@ -7,6 +7,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/lucas-clemente/quic-go/http3"
 	flag "github.com/spf13/pflag"
 )
 
@@ -31,23 +32,31 @@ func printExamples() {
 	fmt.Println("\ttransfer -m relay 8080:172.16.0.1:8080 8081:172.16.0.2:8080 8082:172.16.0.3:8080")
 }
 
-func main() {
-	help := false
-	flag.StringVarP(&protocol, "protocol", "p", "http", "transfer protocol, candidates: http(/http1/http1.1/http2), kcp, quic(/http3)")
-	flag.StringVarP(&workMode, "mode", "m", "server", "work mode, candidates: server, client, proxy, relay")
-	flag.StringVarP(&fileServePath, "directory", "d", ".", "serve directory path, server/client mode only")
-	flag.StringVarP(&listenAddr, "listen", "l", ":8080", "listen address, server/proxy mode only")
-	flag.StringVarP(&serverAddr, "connect", "c", "", "upload server address, for example: http://172.16.0.1:8080/uploadFile, client mode only")
-	flag.BoolVarP(&help, "help", "h", false, "show this help message")
-	flag.Parse()
+func quicHandler() {
+	switch workMode {
+	case "client":
+		args := flag.Args()
+		if len(args) == 0 {
+			log.Fatal("Local file to be uploaded is missing.")
+		}
+	case "server":
+		log.Println("Starting quic(http3) server at", listenAddr, ", please don't close it if you are not sure what it is doing.")
 
-	if help {
-		printExamples()
-		fmt.Printf("\n")
-		flag.PrintDefaults()
-		return
+		http.HandleFunc("/uploadFile", uploadFileHandler)
+		http.Handle("/", http.FileServer(http.Dir(fileServePath)))
+		log.Fatal(http3.ListenAndServeQUIC(listenAddr, "cert/chain.pem", "cert/privkey.pem", nil))
+	case "proxy":
+		log.Println("Starting http proxy at", listenAddr, ", please don't close it if you are not sure what it is doing.")
+	case "relay":
+		args := flag.Args()
+		if len(args) == 0 {
+			log.Fatal("Port mapping is missing.")
+		}
+		log.Println("Starting http reverse proxy at", strings.Join(args, " "), ", please don't close it if you are not sure what it is doing.")
 	}
+}
 
+func httpHandler() {
 	switch workMode {
 	case "client":
 		args := flag.Args()
@@ -87,5 +96,32 @@ func main() {
 		wg.Wait()
 	default:
 		log.Fatal("Unsupported work mode, available values: server, client, proxy")
+	}
+}
+
+func main() {
+	help := false
+	flag.StringVarP(&protocol, "protocol", "p", "http", "transfer protocol, candidates: http(/http1/http1.1/http2), kcp, quic(/http3)")
+	flag.StringVarP(&workMode, "mode", "m", "server", "work mode, candidates: server, client, proxy, relay")
+	flag.StringVarP(&fileServePath, "directory", "d", ".", "serve directory path, server/client mode only")
+	flag.StringVarP(&listenAddr, "listen", "l", ":8080", "listen address, server/proxy mode only")
+	flag.StringVarP(&serverAddr, "connect", "c", "", "upload server address, for example: http://172.16.0.1:8080/uploadFile, client mode only")
+	flag.BoolVarP(&help, "help", "h", false, "show this help message")
+	flag.Parse()
+
+	if help {
+		printExamples()
+		fmt.Printf("\n")
+		flag.PrintDefaults()
+		return
+	}
+
+	switch strings.ToLower(protocol) {
+	case "http", "http1", "http1.1", "http2":
+		httpHandler()
+	case "kcp":
+	case "quic", "http3":
+	default:
+		log.Fatal("Unsupported protocol")
 	}
 }
