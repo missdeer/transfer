@@ -120,6 +120,11 @@ func downloadFileRequest(uri string, filePath string, isHTTP3 bool) error {
 	}
 	defer fd.Close()
 
-	io.Copy(fd, resp.Body)
-	return nil
+	wr, err := io.Copy(fd, resp.Body)
+	if err != nil {
+		log.Println(err)
+	} else {
+		log.Printf("%d bytes written to %s\n", wr, filePath)
+	}
+	return err
 }
