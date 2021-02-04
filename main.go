@@ -16,41 +16,42 @@ const (
 )
 
 var (
-	workMode      string
-	fileServePath string
-	listenAddr    string
-	serverAddr    string
-	protocol      string
-	certFile      string
-	keyFile       string
-	outputFile    string
+	workMode           string
+	fileServePath      string
+	listenAddr         string
+	serverAddr         string
+	protocol           string
+	certFile           string
+	keyFile            string
+	outputFile         string
+	insecureSkipVerify bool
 )
 
 func printExamples() {
 	fmt.Println("Examples:")
 	fmt.Println("\ttransfer")
 	fmt.Println("\ttransfer -m server -l :8888")
-	fmt.Println("\ttransfer -m client -c http://172.16.0.1:8080/uploadFile ~/file-to-upload")
-	fmt.Println("\ttransfer -m client -c http://172.16.0.1:8080/file-to-download -o ~/file-downloaded")
+	fmt.Println("\ttransfer -m upload -c http://172.16.0.1:8080/uploadFile ~/file-to-upload")
+	fmt.Println("\ttransfer -m download -c http://172.16.0.1:8080/file-to-download -o ~/file-downloaded")
 	fmt.Println("\ttransfer -m proxy")
 	fmt.Println("\ttransfer -m relay 8080:172.16.0.1:8080 8081:172.16.0.2:8080 8082:172.16.0.3:8080")
 }
 
 func quicHandler() {
 	switch workMode {
-	case "client":
+	case "download":
+		downloadFileRequest(serverAddr, outputFile, true)
+	case "upload":
 		args := flag.Args()
-		if len(args) == 0 && outputFile != "" {
-			// download
-		} else {
-			// upload
+		for _, f := range args {
+			uploadFileRequest(serverAddr, f, true)
 		}
 	case "server":
 		log.Println("Starting quic(http3) server at", listenAddr, ", please don't close it if you are not sure what it is doing.")
 
 		http.HandleFunc("/uploadFile", uploadFileHandler)
 		http.Handle("/", http.FileServer(http.Dir(fileServePath)))
-		log.Fatal(http3.ListenAndServeQUIC(listenAddr, certFile, keyFile, nil))
+		log.Fatal(http3.ListenAndServe(listenAddr, certFile, keyFile, nil))
 	case "proxy":
 		log.Println("Starting http proxy at", listenAddr, ", please don't close it if you are not sure what it is doing.")
 	case "relay":
@@ -64,15 +65,12 @@ func quicHandler() {
 
 func httpHandler() {
 	switch workMode {
-	case "client":
+	case "download":
+		downloadFileRequest(serverAddr, outputFile, false)
+	case "upload":
 		args := flag.Args()
-		if len(args) == 0 && outputFile != "" {
-			// download
-		} else {
-			// upload
-			for _, f := range args {
-				uploadFileRequest(serverAddr, f)
-			}
+		for _, f := range args {
+			uploadFileRequest(serverAddr, f, false)
 		}
 	case "server":
 		log.Println("Starting http server at", listenAddr, ", please don't close it if you are not sure what it is doing.")
@@ -109,14 +107,15 @@ func httpHandler() {
 
 func main() {
 	help := false
-	flag.StringVarP(&protocol, "protocol", "p", "http", "transfer protocol, candidates: http(/http1/http1.1/http2), kcp, quic(/http3)")
-	flag.StringVarP(&workMode, "mode", "m", "server", "work mode, candidates: server, client, proxy, relay")
-	flag.StringVarP(&fileServePath, "directory", "d", ".", "serve directory path, server/client mode only")
+	flag.StringVarP(&protocol, "protocol", "p", "http", "transfer protocol, candidates: http(/http1/http1.1/http2), quic(/http3), kcp")
+	flag.StringVarP(&workMode, "mode", "m", "server", "work mode, candidates: server, download, upload, proxy, relay")
+	flag.StringVarP(&fileServePath, "directory", "d", ".", "serve directory path, server mode only")
 	flag.StringVarP(&listenAddr, "listen", "l", ":8080", "listen address, server/proxy mode only")
-	flag.StringVarP(&serverAddr, "connect", "c", "", "upload server address, for example: http://172.16.0.1:8080/uploadFile, client mode only")
-	flag.StringVarP(&outputFile, "output", "o", "", "save downloaded file to local path, client mode only")
+	flag.StringVarP(&serverAddr, "connect", "c", "", "upload server address, for example: http://172.16.0.1:8080/uploadFile, download/upload mode only")
+	flag.StringVarP(&outputFile, "output", "o", "", "save downloaded file to local path, download mode only")
 	flag.StringVarP(&certFile, "cert", "t", "cert.pem", "SSL certificate file path")
 	flag.StringVarP(&keyFile, "key", "k", "key.pem", "SSL key file path")
+	flag.BoolVarP(&insecureSkipVerify, "insecureSkipVerify", "", false, "insecure skip SSL verify")
 	flag.BoolVarP(&help, "help", "h", false, "show this help message")
 	flag.Parse()
 
@@ -130,9 +129,9 @@ func main() {
 	switch strings.ToLower(protocol) {
 	case "http", "http1", "http1.1", "http2":
 		httpHandler()
-	case "kcp":
 	case "quic", "http3":
 		quicHandler()
+	case "kcp":
 	default:
 		log.Fatal("Unsupported protocol")
 	}
