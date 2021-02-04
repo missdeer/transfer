@@ -7,7 +7,6 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/lucas-clemente/quic-go/http3"
 	flag "github.com/spf13/pflag"
 )
 
@@ -51,7 +50,7 @@ func quicHandler() {
 
 		http.HandleFunc("/uploadFile", uploadFileHandler)
 		http.Handle("/", http.FileServer(http.Dir(fileServePath)))
-		log.Fatal(http3.ListenAndServe(listenAddr, certFile, keyFile, nil))
+		log.Fatal(listenAndServe(listenAddr, certFile, keyFile, nil))
 	case "proxy":
 		log.Println("Starting http proxy at", listenAddr, ", please don't close it if you are not sure what it is doing.")
 	case "relay":
