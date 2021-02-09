@@ -39,10 +39,12 @@ func printExamples() {
 func quicHandler() {
 	switch workMode {
 	case "download":
+		log.Printf("downloading %s to %s via %s protocol\n", serverAddr, outputFile, protocol)
 		downloadFileRequest(serverAddr, outputFile, true)
 	case "upload":
 		args := flag.Args()
 		for _, f := range args {
+			log.Printf("uploading %s to %s via %s protocol\n", f, serverAddr, protocol)
 			uploadFileRequest(serverAddr, f, true)
 		}
 	case "server":
@@ -65,10 +67,12 @@ func quicHandler() {
 func httpHandler() {
 	switch workMode {
 	case "download":
+		log.Printf("downloading %s to %s via %s protocol\n", serverAddr, outputFile, protocol)
 		downloadFileRequest(serverAddr, outputFile, false)
 	case "upload":
 		args := flag.Args()
 		for _, f := range args {
+			log.Printf("uploading %s to %s via %s protocol\n", f, serverAddr, protocol)
 			uploadFileRequest(serverAddr, f, false)
 		}
 	case "server":
@@ -106,7 +110,7 @@ func httpHandler() {
 
 func main() {
 	help := false
-	flag.StringVarP(&protocol, "protocol", "p", "http", "transfer protocol, candidates: http(/http1/http1.1/http2), quic(/http3), kcp")
+	flag.StringVarP(&protocol, "protocol", "p", "http", "transfer protocol, candidates: http(/http1/http1.1/http2), quic(/http3)")
 	flag.StringVarP(&workMode, "mode", "m", "server", "work mode, candidates: server, download, upload, proxy, relay")
 	flag.StringVarP(&fileServePath, "directory", "d", ".", "serve directory path, server mode only")
 	flag.StringVarP(&listenAddr, "listen", "l", ":8080", "listen address, server/proxy mode only")
@@ -130,7 +134,6 @@ func main() {
 		httpHandler()
 	case "quic", "http3":
 		quicHandler()
-	case "kcp":
 	default:
 		log.Fatal("Unsupported protocol")
 	}
