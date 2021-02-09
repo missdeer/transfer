@@ -8,7 +8,7 @@ import (
 	"sync"
 )
 
-func createReverseProxy(listen string, target string, wg *sync.WaitGroup) {
+func createReverseProxy(listen string, target string, wg *sync.WaitGroup, isHTTP3 bool) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 
@@ -21,10 +21,14 @@ func createReverseProxy(listen string, target string, wg *sync.WaitGroup) {
 		proxy := httputil.NewSingleHostReverseProxy(url)
 		proxy.ServeHTTP(w, r)
 	})
-	s := http.Server{
-		Addr:    listen,
-		Handler: mux,
+	if isHTTP3 {
+		log.Fatal(listenAndServe(listenAddr, certFile, keyFile, mux))
+	} else {
+		s := http.Server{
+			Addr:    listen,
+			Handler: mux,
+		}
+		log.Fatal(s.ListenAndServe())
 	}
-	log.Fatal(s.ListenAndServe())
 	wg.Done()
 }

@@ -62,6 +62,18 @@ func quicHandler() {
 			log.Fatal("Port mapping is missing.")
 		}
 		log.Println("Starting http reverse proxy at", strings.Join(args, " "), ", please don't close it if you are not sure what it is doing.")
+		var wg sync.WaitGroup
+		wg.Add(len(args))
+		for _, a := range args {
+			ss := strings.Split(a, ":")
+			if len(ss) != 3 {
+				log.Println("Drop invalid port mapping entry", a)
+				wg.Done()
+				continue
+			}
+			go createReverseProxy(fmt.Sprintf(":%s", ss[0]), fmt.Sprintf("https://%s:%s", ss[1], ss[2]), &wg, true)
+		}
+		wg.Wait()
 	}
 }
 
@@ -101,7 +113,7 @@ func httpHandler() {
 				wg.Done()
 				continue
 			}
-			go createReverseProxy(fmt.Sprintf(":%s", ss[0]), fmt.Sprintf("http://%s:%s", ss[1], ss[2]), &wg)
+			go createReverseProxy(fmt.Sprintf(":%s", ss[0]), fmt.Sprintf("http://%s:%s", ss[1], ss[2]), &wg, false)
 		}
 		wg.Wait()
 	default:
