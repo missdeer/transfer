@@ -55,6 +55,7 @@ func quicHandler() {
 		log.Fatal(listenAndServe(listenAddr, certFile, keyFile, nil))
 	case "proxy":
 		log.Println("Starting http proxy at", listenAddr, ", please don't close it if you are not sure what it is doing.")
+		log.Fatal(listenAndServe(listenAddr, certFile, keyFile, createProxy()))
 	case "relay":
 		args := flag.Args()
 		if len(args) == 0 {
