@@ -36,7 +36,7 @@ func printExamples() {
 	fmt.Println("\ttransfer -m relay 8080:172.16.0.1:8080 8081:172.16.0.2:8080 8082:172.16.0.3:8080")
 }
 
-func quicHandler() {
+func httpsHandler() {
 	switch workMode {
 	case "download":
 		log.Printf("downloading %s to %s via %s protocol\n", serverAddr, outputFile, protocol)
@@ -123,7 +123,7 @@ func httpHandler() {
 
 func main() {
 	help := false
-	flag.StringVarP(&protocol, "protocol", "p", "http", "transfer protocol, candidates: http(/http1/http1.1/http2), quic(/http3)")
+	flag.StringVarP(&protocol, "protocol", "p", "http", "transfer protocol, candidates: http, https")
 	flag.StringVarP(&workMode, "mode", "m", "server", "work mode, candidates: server, download, upload, proxy, relay")
 	flag.StringVarP(&fileServePath, "directory", "d", ".", "serve directory path, server mode only")
 	flag.StringVarP(&listenAddr, "listen", "l", ":8080", "listen address, server/proxy mode only")
@@ -143,10 +143,10 @@ func main() {
 	}
 
 	switch strings.ToLower(protocol) {
-	case "http", "http1", "http1.1", "http2":
+	case "http":
 		httpHandler()
-	case "quic", "http3":
-		quicHandler()
+	case "https":
+		httpsHandler()
 	default:
 		log.Fatal("Unsupported protocol")
 	}
