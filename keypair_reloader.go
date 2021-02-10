@@ -7,6 +7,8 @@ import (
 	"os/signal"
 	"sync"
 	"syscall"
+
+	"github.com/fsnotify/fsnotify"
 )
 
 type keypairReloader struct {
@@ -16,7 +18,7 @@ type keypairReloader struct {
 	keyPath  string
 }
 
-func NewKeypairReloader(certPath, keyPath string) (*keypairReloader, error) {
+func newKeypairReloader(certPath, keyPath string) (*keypairReloader, error) {
 	result := &keypairReloader{
 		certPath: certPath,
 		keyPath:  keyPath,
@@ -26,6 +28,39 @@ func NewKeypairReloader(certPath, keyPath string) (*keypairReloader, error) {
 		return nil, err
 	}
 	result.cert = &cert
+
+	go func() {
+		watcher, err := fsnotify.NewWatcher()
+		if err != nil {
+			log.Fatal(err)
+		}
+		err = watcher.Add(certPath)
+		if err != nil {
+			log.Fatal(err)
+		}
+		err = watcher.Add(keyPath)
+		if err != nil {
+			log.Fatal(err)
+		}
+		defer watcher.Close()
+
+		for {
+			select {
+			case event := <-watcher.Events:
+				if event.Op&fsnotify.Write == fsnotify.Write {
+					log.Printf("File changed, reloading TLS certificate and key from %q and %q", certPath, keyPath)
+					if err := result.maybeReload(); err != nil {
+						log.Printf("Keeping old TLS certificate because the new one could not be loaded: %v", err)
+					}
+				}
+			case err := <-watcher.Errors:
+				if err != nil {
+					log.Fatal(err)
+				}
+			}
+		}
+	}()
+
 	go func() {
 		c := make(chan os.Signal, 1)
 		signal.Notify(c, syscall.SIGHUP)

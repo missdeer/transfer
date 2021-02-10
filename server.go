@@ -51,7 +51,7 @@ func uploadFileHandler(w http.ResponseWriter, r *http.Request) {
 func listenAndServe(addr, certFile, keyFile string, handler http.Handler) error {
 	// Load certs
 	var err error
-	kpr, err := NewKeypairReloader(certFile, keyFile)
+	kpr, err := newKeypairReloader(certFile, keyFile)
 	if err != nil {
 		return err
 	}
