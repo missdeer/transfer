@@ -38,15 +38,6 @@ func printExamples() {
 
 func httpsHandler() {
 	switch workMode {
-	case "download":
-		log.Printf("downloading %s to %s\n", serverAddr, outputFile)
-		downloadFileRequest(serverAddr, outputFile, true)
-	case "upload":
-		args := flag.Args()
-		for _, f := range args {
-			log.Printf("uploading %s to %s via %s protocol\n", f, serverAddr, protocol)
-			uploadFileRequest(serverAddr, f, true)
-		}
 	case "server":
 		log.Println("Starting quic(http3) server at", listenAddr, ", please don't close it if you are not sure what it is doing.")
 
@@ -79,15 +70,6 @@ func httpsHandler() {
 
 func httpHandler() {
 	switch workMode {
-	case "download":
-		log.Printf("downloading %s to %s\n", serverAddr, outputFile)
-		downloadFileRequest(serverAddr, outputFile, false)
-	case "upload":
-		args := flag.Args()
-		for _, f := range args {
-			log.Printf("uploading %s to %s via %s protocol\n", f, serverAddr, protocol)
-			uploadFileRequest(serverAddr, f, false)
-		}
 	case "server":
 		log.Println("Starting http server at", listenAddr, ", please don't close it if you are not sure what it is doing.")
 
@@ -140,6 +122,22 @@ func main() {
 		fmt.Printf("\n")
 		flag.PrintDefaults()
 		return
+	}
+	switch workMode {
+	case "download":
+		uri, isHTTP3, _ := isHTTP3Enabled(serverAddr)
+		log.Printf("downloading %s to %s, isHTTP3Enabled=%t\n", uri, outputFile, isHTTP3)
+		downloadFileRequest(uri, outputFile, isHTTP3)
+		return
+	case "upload":
+		uri, isHTTP3, _ := isHTTP3Enabled(serverAddr)
+		args := flag.Args()
+		for _, f := range args {
+			log.Printf("uploading %s to %s, isHTTP3Enabled=%t\n", f, uri, isHTTP3)
+			uploadFileRequest(uri, f, isHTTP3)
+		}
+		return
+	default:
 	}
 
 	switch strings.ToLower(protocol) {

@@ -9,8 +9,11 @@ import (
 	"log"
 	"mime/multipart"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
+	"strings"
 	"time"
 
 	"github.com/lucas-clemente/quic-go/http3"
@@ -162,4 +165,52 @@ func downloadFileRequest(uri string, filePath string, isHTTP3 bool) error {
 		log.Printf(logs)
 	}
 	return err
+}
+
+func isHTTP3Enabled(uri string) (string, bool, error) {
+	if strings.ToLower(protocol) == "quic" {
+		return uri, true, nil
+	}
+
+	req, err := http.NewRequest("HEAD", uri, nil)
+	if err != nil {
+		log.Println(err)
+		return uri, false, err
+	}
+	client := &http.Client{
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{
+				InsecureSkipVerify: insecureSkipVerify,
+			},
+		},
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		log.Println(err)
+		return uri, false, err
+	}
+	defer resp.Body.Close()
+
+	altSvc := resp.Header.Get("alt-svc")
+	ss := strings.Split(altSvc, ",")
+	r := regexp.MustCompile(`h3\-(29|32)="(.*)";\s*ma=[0-9]+`)
+	for _, s := range ss {
+		h3ma := r.FindAllStringSubmatch(s, -1)
+		if len(h3ma) > 0 && len(h3ma[0]) == 3 {
+			newPort := h3ma[0][2]
+			u, err := url.Parse(uri)
+			if err != nil {
+				continue
+			}
+			host := strings.Split(u.Host, ":")
+			if len(host) == 2 {
+				host[1] = newPort[1:]
+				u.Host = strings.Join(host, ":")
+			} else {
+				u.Host = host[0] + newPort
+			}
+			return u.String(), true, nil
+		}
+	}
+	return uri, false, nil
 }
