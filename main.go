@@ -145,7 +145,7 @@ func main() {
 	switch strings.ToLower(protocol) {
 	case "http":
 		httpHandler()
-	case "https":
+	case "https", "quic":
 		httpsHandler()
 	default:
 		log.Fatal("Unsupported protocol")
