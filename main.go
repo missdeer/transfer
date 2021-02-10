@@ -39,7 +39,7 @@ func printExamples() {
 func httpsHandler() {
 	switch workMode {
 	case "download":
-		log.Printf("downloading %s to %s via %s protocol\n", serverAddr, outputFile, protocol)
+		log.Printf("downloading %s to %s\n", serverAddr, outputFile)
 		downloadFileRequest(serverAddr, outputFile, true)
 	case "upload":
 		args := flag.Args()
@@ -80,7 +80,7 @@ func httpsHandler() {
 func httpHandler() {
 	switch workMode {
 	case "download":
-		log.Printf("downloading %s to %s via %s protocol\n", serverAddr, outputFile, protocol)
+		log.Printf("downloading %s to %s\n", serverAddr, outputFile)
 		downloadFileRequest(serverAddr, outputFile, false)
 	case "upload":
 		args := flag.Args()

@@ -11,8 +11,11 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/lucas-clemente/quic-go/http3"
+	"golang.org/x/text/language"
+	"golang.org/x/text/message"
 )
 
 // Creates a new file upload http request with optional extra params
@@ -78,6 +81,7 @@ func uploadFileRequest(uri string, filePath string, isHTTP3 bool) error {
 }
 
 func downloadFileRequest(uri string, filePath string, isHTTP3 bool) error {
+	tsBegin := time.Now()
 	req, err := http.NewRequest("GET", uri, nil)
 	if err != nil {
 		log.Println(err)
@@ -120,11 +124,42 @@ func downloadFileRequest(uri string, filePath string, isHTTP3 bool) error {
 	}
 	defer fd.Close()
 
-	wr, err := io.Copy(fd, resp.Body)
-	if err != nil {
+	englishPrinter := message.NewPrinter(language.English)
+	var totalReceived int64
+	buf := make([]byte, 32*1024)
+	for {
+		nr, er := resp.Body.Read(buf)
+		if nr > 0 {
+			nw, ew := fd.Write(buf[0:nr])
+			if nw > 0 {
+				totalReceived += int64(nw)
+			}
+			if ew != nil {
+				err = ew
+				break
+			}
+			if nr != nw {
+				err = io.ErrShortWrite
+				break
+			}
+			englishPrinter.Printf("\rreceived and wrote %d bytes", totalReceived)
+		}
+		if er != nil {
+			if er != io.EOF {
+				err = er
+			}
+			break
+		}
+	}
+
+	fmt.Printf("\n")
+	if err != nil && err != io.EOF {
 		log.Println(err)
 	} else {
-		log.Printf("%d bytes written to %s\n", wr, filePath)
+		tsEnd := time.Now()
+		tsCost := tsEnd.Sub(tsBegin)
+		logs := englishPrinter.Sprintf("%d bytes received and written to %s in %+v\n", totalReceived, filePath, tsCost)
+		log.Printf(logs)
 	}
 	return err
 }

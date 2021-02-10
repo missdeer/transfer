@@ -22,7 +22,7 @@ func createReverseProxy(listen string, target string, wg *sync.WaitGroup, isHTTP
 		proxy.ServeHTTP(w, r)
 	})
 	if isHTTP3 {
-		log.Fatal(listenAndServe(listenAddr, certFile, keyFile, mux))
+		log.Fatal(listenAndServe(listen, certFile, keyFile, mux))
 	} else {
 		s := http.Server{
 			Addr:    listen,
