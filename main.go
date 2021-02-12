@@ -7,6 +7,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/lucas-clemente/quic-go/http3"
 	flag "github.com/spf13/pflag"
 )
 
@@ -34,6 +35,38 @@ func printExamples() {
 	fmt.Println("\ttransfer -m download -c http://172.16.0.1:8080/file-to-download -o ~/file-downloaded")
 	fmt.Println("\ttransfer -m proxy")
 	fmt.Println("\ttransfer -m relay 8080:172.16.0.1:8080 8081:172.16.0.2:8080 8082:172.16.0.3:8080")
+}
+
+func quicHandler() {
+	switch workMode {
+	case "server":
+		log.Println("Starting quic server at", listenAddr, ", please don't close it if you are not sure what it is doing.")
+
+		http.HandleFunc("/uploadFile", uploadFileHandler)
+		http.Handle("/", http.FileServer(http.Dir(fileServePath)))
+		log.Fatal(http3.ListenAndServeQUIC(listenAddr, certFile, keyFile, nil))
+	case "proxy":
+		log.Println("Starting http proxy at", listenAddr, ", please don't close it if you are not sure what it is doing.")
+		log.Fatal(http3.ListenAndServeQUIC(listenAddr, certFile, keyFile, createProxy()))
+	case "relay":
+		args := flag.Args()
+		if len(args) == 0 {
+			log.Fatal("Port mapping is missing.")
+		}
+		log.Println("Starting http reverse proxy at", strings.Join(args, " "), ", please don't close it if you are not sure what it is doing.")
+		var wg sync.WaitGroup
+		wg.Add(len(args))
+		for _, a := range args {
+			ss := strings.Split(a, ":")
+			if len(ss) != 3 {
+				log.Println("Drop invalid port mapping entry", a)
+				wg.Done()
+				continue
+			}
+			go createReverseProxy(fmt.Sprintf(":%s", ss[0]), fmt.Sprintf("https://%s:%s", ss[1], ss[2]), &wg, true)
+		}
+		wg.Wait()
+	}
 }
 
 func httpsHandler() {
@@ -105,7 +138,7 @@ func httpHandler() {
 
 func main() {
 	help := false
-	flag.StringVarP(&protocol, "protocol", "p", "http", "transfer protocol, candidates: http, https")
+	flag.StringVarP(&protocol, "protocol", "p", "http", "transfer protocol, candidates: http, https, quic")
 	flag.StringVarP(&workMode, "mode", "m", "server", "work mode, candidates: server, download, upload, proxy, relay")
 	flag.StringVarP(&fileServePath, "directory", "d", ".", "serve directory path, server mode only")
 	flag.StringVarP(&listenAddr, "listen", "l", ":8080", "listen address, server/proxy mode only")
@@ -143,8 +176,10 @@ func main() {
 	switch strings.ToLower(protocol) {
 	case "http":
 		httpHandler()
-	case "https", "quic":
+	case "https":
 		httpsHandler()
+	case "quic":
+		quicHandler()
 	default:
 		log.Fatal("Unsupported protocol")
 	}
