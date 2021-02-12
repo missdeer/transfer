@@ -161,7 +161,7 @@ func downloadFileRequest(uri string, filePath string, isHTTP3 bool) error {
 	} else {
 		tsEnd := time.Now()
 		tsCost := tsEnd.Sub(tsBegin)
-		speed := totalReceived/int64(tsCost/time.Second)
+		speed := totalReceived / int64(tsCost/time.Second)
 		logs := englishPrinter.Sprintf("%d bytes received and written to %s in %+v at %d B/s\n", totalReceived, filePath, tsCost, speed)
 		log.Printf(logs)
 	}
@@ -210,6 +210,7 @@ func isHTTP3Enabled(uri string) (string, bool, error) {
 			} else {
 				u.Host = host[0] + newPort
 			}
+			u.Scheme = "https"
 			return u.String(), true, nil
 		}
 	}
