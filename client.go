@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -119,6 +120,11 @@ func downloadFileRequest(uri string, filePath string, isHTTP3 bool) error {
 	}
 	defer resp.Body.Close()
 
+	contentLength := resp.Header.Get("Content-Length")
+	expectedLength, err := strconv.ParseInt(contentLength, 10, 64)
+	if err != nil {
+		log.Println("parsing content-length", err)
+	}
 	dir := filepath.Dir(filePath)
 	if _, err := os.Stat(dir); os.ErrNotExist == err {
 		os.MkdirAll(dir, 0755)
@@ -149,7 +155,10 @@ func downloadFileRequest(uri string, filePath string, isHTTP3 bool) error {
 				err = io.ErrShortWrite
 				break
 			}
-			englishPrinter.Printf("\rreceived and wrote %d bytes", totalReceived)
+			tsEnd := time.Now()
+			tsCost := tsEnd.Sub(tsBegin)
+			speed := totalReceived * 1000 / int64(tsCost/time.Millisecond)
+			englishPrinter.Printf("\rreceived and wrote %d/%d bytes in %+v at %d B/s", totalReceived, expectedLength, tsCost, speed)
 		}
 		if er != nil {
 			if er != io.EOF {
@@ -165,7 +174,7 @@ func downloadFileRequest(uri string, filePath string, isHTTP3 bool) error {
 	} else {
 		tsEnd := time.Now()
 		tsCost := tsEnd.Sub(tsBegin)
-		speed := totalReceived / int64(tsCost/time.Second)
+		speed := totalReceived * 1000 / int64(tsCost/time.Millisecond)
 		logs := englishPrinter.Sprintf("%d bytes received and written to %s in %+v at %d B/s\n", totalReceived, filePath, tsCost, speed)
 		log.Printf(logs)
 	}
