@@ -70,19 +70,6 @@ func listenAndServe(addr, certFile, keyFile string, handler http.Handler, quicOn
 	}
 	defer udpConn.Close()
 
-	tcpAddr, err := net.ResolveTCPAddr("tcp", addr)
-	if err != nil {
-		return err
-	}
-	tcpConn, err := net.ListenTCP("tcp", tcpAddr)
-	if err != nil {
-		return err
-	}
-	defer tcpConn.Close()
-
-	tlsConn := tls.NewListener(tcpConn, config)
-	defer tlsConn.Close()
-
 	// Start the servers
 	httpServer := &http.Server{
 		Addr:      addr,
@@ -103,6 +90,18 @@ func listenAndServe(addr, certFile, keyFile string, handler http.Handler, quicOn
 
 	hErr := make(chan error)
 	if !quicOnly {
+		tcpAddr, err := net.ResolveTCPAddr("tcp", addr)
+		if err != nil {
+			return err
+		}
+		tcpConn, err := net.ListenTCP("tcp", tcpAddr)
+		if err != nil {
+			return err
+		}
+		defer tcpConn.Close()
+
+		tlsConn := tls.NewListener(tcpConn, config)
+		defer tlsConn.Close()
 		go func() {
 			hErr <- httpServer.Serve(tlsConn)
 		}()

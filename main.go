@@ -33,7 +33,7 @@ func printExamples() {
 	fmt.Println("\ttransfer -m upload -c http://172.16.0.1:8080/uploadFile ~/file-to-upload")
 	fmt.Println("\ttransfer -m download -c http://172.16.0.1:8080/file-to-download -o ~/file-downloaded")
 	fmt.Println("\ttransfer -m proxy")
-	fmt.Println("\ttransfer -m relay 8080:172.16.0.1:8080 8081:172.16.0.2:8080 8082:172.16.0.3:8080")
+	fmt.Println("\ttransfer -m relay 8080<=>http://172.16.0.1:8080 8081<=>http://172.16.0.2:8080 8082<=>http://172.16.0.3:8080")
 }
 
 func httpsHandler(quicOnly bool) {
@@ -56,13 +56,15 @@ func httpsHandler(quicOnly bool) {
 		var wg sync.WaitGroup
 		wg.Add(len(args))
 		for _, a := range args {
-			ss := strings.Split(a, ":")
-			if len(ss) != 3 {
+			ss := strings.Split(a, "<=>")
+			if len(ss) != 2 {
 				log.Println("Drop invalid port mapping entry", a)
 				wg.Done()
 				continue
 			}
-			go createReverseProxy(fmt.Sprintf(":%s", ss[0]), fmt.Sprintf("https://%s:%s", ss[1], ss[2]), &wg, true, quicOnly)
+			go createReverseProxy(func(mux *http.ServeMux) error {
+				return listenAndServe(fmt.Sprintf(":%s", ss[0]), certFile, keyFile, mux, quicOnly)
+			}, ss[1], &wg)
 		}
 		wg.Wait()
 	}
@@ -89,13 +91,19 @@ func httpHandler() {
 		var wg sync.WaitGroup
 		wg.Add(len(args))
 		for _, a := range args {
-			ss := strings.Split(a, ":")
-			if len(ss) != 3 {
+			ss := strings.Split(a, "<=>")
+			if len(ss) != 2 {
 				log.Println("Drop invalid port mapping entry", a)
 				wg.Done()
 				continue
 			}
-			go createReverseProxy(fmt.Sprintf(":%s", ss[0]), fmt.Sprintf("http://%s:%s", ss[1], ss[2]), &wg, false, false)
+			go createReverseProxy(func(mux *http.ServeMux) error {
+				s := http.Server{
+					Addr:    fmt.Sprintf(":%s", ss[0]),
+					Handler: mux,
+				}
+				return s.ListenAndServe()
+			}, ss[1], &wg)
 		}
 		wg.Wait()
 	default:
