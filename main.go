@@ -7,7 +7,6 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/lucas-clemente/quic-go/http3"
 	flag "github.com/spf13/pflag"
 )
 
@@ -37,49 +36,17 @@ func printExamples() {
 	fmt.Println("\ttransfer -m relay 8080:172.16.0.1:8080 8081:172.16.0.2:8080 8082:172.16.0.3:8080")
 }
 
-func quicHandler() {
-	switch workMode {
-	case "server":
-		log.Println("Starting quic server at", listenAddr, ", please don't close it if you are not sure what it is doing.")
-
-		http.HandleFunc("/uploadFile", uploadFileHandler)
-		http.Handle("/", http.FileServer(http.Dir(fileServePath)))
-		log.Fatal(http3.ListenAndServeQUIC(listenAddr, certFile, keyFile, nil))
-	case "proxy":
-		log.Println("Starting http proxy at", listenAddr, ", please don't close it if you are not sure what it is doing.")
-		log.Fatal(http3.ListenAndServeQUIC(listenAddr, certFile, keyFile, createProxy()))
-	case "relay":
-		args := flag.Args()
-		if len(args) == 0 {
-			log.Fatal("Port mapping is missing.")
-		}
-		log.Println("Starting http reverse proxy at", strings.Join(args, " "), ", please don't close it if you are not sure what it is doing.")
-		var wg sync.WaitGroup
-		wg.Add(len(args))
-		for _, a := range args {
-			ss := strings.Split(a, ":")
-			if len(ss) != 3 {
-				log.Println("Drop invalid port mapping entry", a)
-				wg.Done()
-				continue
-			}
-			go createReverseProxy(fmt.Sprintf(":%s", ss[0]), fmt.Sprintf("https://%s:%s", ss[1], ss[2]), &wg, true)
-		}
-		wg.Wait()
-	}
-}
-
-func httpsHandler() {
+func httpsHandler(quicOnly bool) {
 	switch workMode {
 	case "server":
 		log.Println("Starting quic(http3) server at", listenAddr, ", please don't close it if you are not sure what it is doing.")
 
 		http.HandleFunc("/uploadFile", uploadFileHandler)
 		http.Handle("/", http.FileServer(http.Dir(fileServePath)))
-		log.Fatal(listenAndServe(listenAddr, certFile, keyFile, nil))
+		log.Fatal(listenAndServe(listenAddr, certFile, keyFile, nil, quicOnly))
 	case "proxy":
 		log.Println("Starting http proxy at", listenAddr, ", please don't close it if you are not sure what it is doing.")
-		log.Fatal(listenAndServe(listenAddr, certFile, keyFile, createProxy()))
+		log.Fatal(listenAndServe(listenAddr, certFile, keyFile, createProxy(), quicOnly))
 	case "relay":
 		args := flag.Args()
 		if len(args) == 0 {
@@ -95,7 +62,7 @@ func httpsHandler() {
 				wg.Done()
 				continue
 			}
-			go createReverseProxy(fmt.Sprintf(":%s", ss[0]), fmt.Sprintf("https://%s:%s", ss[1], ss[2]), &wg, true)
+			go createReverseProxy(fmt.Sprintf(":%s", ss[0]), fmt.Sprintf("https://%s:%s", ss[1], ss[2]), &wg, true, quicOnly)
 		}
 		wg.Wait()
 	}
@@ -128,7 +95,7 @@ func httpHandler() {
 				wg.Done()
 				continue
 			}
-			go createReverseProxy(fmt.Sprintf(":%s", ss[0]), fmt.Sprintf("http://%s:%s", ss[1], ss[2]), &wg, false)
+			go createReverseProxy(fmt.Sprintf(":%s", ss[0]), fmt.Sprintf("http://%s:%s", ss[1], ss[2]), &wg, false, false)
 		}
 		wg.Wait()
 	default:
@@ -177,9 +144,9 @@ func main() {
 	case "http":
 		httpHandler()
 	case "https":
-		httpsHandler()
+		httpsHandler(false)
 	case "quic":
-		quicHandler()
+		httpsHandler(true)
 	default:
 		log.Fatal("Unsupported protocol")
 	}

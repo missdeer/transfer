@@ -48,7 +48,7 @@ func uploadFileHandler(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, "Successfully Uploaded Original File\n")
 }
 
-func listenAndServe(addr, certFile, keyFile string, handler http.Handler) error {
+func listenAndServe(addr, certFile, keyFile string, handler http.Handler, quicOnly bool) error {
 	// Load certs
 	var err error
 	kpr, err := newKeypairReloader(certFile, keyFile)
@@ -102,10 +102,12 @@ func listenAndServe(addr, certFile, keyFile string, handler http.Handler) error 
 	})
 
 	hErr := make(chan error)
+	if !quicOnly {
+		go func() {
+			hErr <- httpServer.Serve(tlsConn)
+		}()
+	}
 	qErr := make(chan error)
-	go func() {
-		hErr <- httpServer.Serve(tlsConn)
-	}()
 	go func() {
 		qErr <- quicServer.Serve(udpConn)
 	}()
