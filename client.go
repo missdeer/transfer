@@ -161,7 +161,8 @@ func downloadFileRequest(uri string, filePath string, isHTTP3 bool) error {
 	} else {
 		tsEnd := time.Now()
 		tsCost := tsEnd.Sub(tsBegin)
-		logs := englishPrinter.Sprintf("%d bytes received and written to %s in %+v\n", totalReceived, filePath, tsCost)
+		speed := totalReceived/int64(tsCost/time.Second)
+		logs := englishPrinter.Sprintf("%d bytes received and written to %s in %+v at %d B/s\n", totalReceived, filePath, tsCost, speed)
 		log.Printf(logs)
 	}
 	return err
