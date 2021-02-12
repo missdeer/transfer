@@ -21,6 +21,10 @@ import (
 	"golang.org/x/text/message"
 )
 
+var (
+	regHTTP3AltSvc = regexp.MustCompile(`h3\-(29|32)="(.*)";\s*ma=[0-9]+`)
+)
+
 // Creates a new file upload http request with optional extra params
 func newfileUploadRequest(uri string, params map[string]string, paramName, filePath string) (*http.Request, error) {
 	file, err := os.Open(filePath)
@@ -194,9 +198,8 @@ func isHTTP3Enabled(uri string) (string, bool, error) {
 
 	altSvc := resp.Header.Get("alt-svc")
 	ss := strings.Split(altSvc, ",")
-	r := regexp.MustCompile(`h3\-(29|32)="(.*)";\s*ma=[0-9]+`)
 	for _, s := range ss {
-		h3ma := r.FindAllStringSubmatch(s, -1)
+		h3ma := regHTTP3AltSvc.FindAllStringSubmatch(s, -1)
 		if len(h3ma) > 0 && len(h3ma[0]) == 3 {
 			newPort := h3ma[0][2]
 			u, err := url.Parse(uri)
