@@ -33,7 +33,7 @@ func printExamples() {
 	fmt.Println("\ttransfer -m upload -c http://172.16.0.1:8080/uploadFile ~/file-to-upload")
 	fmt.Println("\ttransfer -m download -c http://172.16.0.1:8080/file-to-download -o ~/file-downloaded")
 	fmt.Println("\ttransfer -m proxy")
-	fmt.Println("\ttransfer -m relay 8080<=>http://172.16.0.1:8080 8081<=>http://172.16.0.2:8080 8082<=>http://172.16.0.3:8080")
+	fmt.Println("\ttransfer -m relay 8080<->http://172.16.0.1:8080 8081<->http://172.16.0.2:8080 8082<->http://172.16.0.3:8080")
 }
 
 func ternaryOp(condition bool, v1, v2 string) string {
@@ -63,7 +63,7 @@ func httpsHandler(quicOnly bool) {
 		var wg sync.WaitGroup
 		wg.Add(len(args))
 		for _, a := range args {
-			ss := strings.Split(a, "<=>")
+			ss := strings.Split(a, "<->")
 			if len(ss) != 2 {
 				log.Println("Drop invalid port mapping entry", a)
 				wg.Done()
@@ -98,7 +98,7 @@ func httpHandler() {
 		var wg sync.WaitGroup
 		wg.Add(len(args))
 		for _, a := range args {
-			ss := strings.Split(a, "<=>")
+			ss := strings.Split(a, "<->")
 			if len(ss) != 2 {
 				log.Println("Drop invalid port mapping entry", a)
 				wg.Done()
