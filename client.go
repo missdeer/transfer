@@ -23,14 +23,15 @@ import (
 )
 
 var (
+	englishPrinter = message.NewPrinter(language.English)
 	regHTTP3AltSvc = regexp.MustCompile(`h3\-(29|32)="(.*)";\s*ma=[0-9]+`)
 )
 
 // Creates a new file upload http request with optional extra params
-func newfileUploadRequest(uri string, params map[string]string, paramName, filePath string) (*http.Request, error) {
+func newfileUploadRequest(uri string, params map[string]string, paramName, filePath string) (*http.Request, int64, error) {
 	file, err := os.Open(filePath)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	defer file.Close()
 
@@ -38,21 +39,24 @@ func newfileUploadRequest(uri string, params map[string]string, paramName, fileP
 	writer := multipart.NewWriter(body)
 	part, err := writer.CreateFormFile(paramName, filepath.Base(filePath))
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
-	_, err = io.Copy(part, file)
+	length, err := io.Copy(part, file)
+	if err != nil {
+		return nil, 0, err
+	}
 
 	for key, val := range params {
 		_ = writer.WriteField(key, val)
 	}
 	err = writer.Close()
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 
 	req, err := http.NewRequest("POST", uri, body)
 	req.Header.Set("Content-Type", writer.FormDataContentType())
-	return req, err
+	return req, length, err
 }
 
 func uploadFileRequest(uri string, filePath string, isHTTP3 bool) error {
@@ -61,7 +65,7 @@ func uploadFileRequest(uri string, filePath string, isHTTP3 bool) error {
 		"author":      "CUBE SA",
 		"description": fmt.Sprintf("file %s uploaded by CUBE SA", filepath.Base(filePath)),
 	}
-	request, err := newfileUploadRequest(uri, extraParams, uploadFormFileName, filePath)
+	request, totalSent, err := newfileUploadRequest(uri, extraParams, uploadFormFileName, filePath)
 	if err != nil {
 		log.Println(err)
 		return err
@@ -72,6 +76,7 @@ func uploadFileRequest(uri string, filePath string, isHTTP3 bool) error {
 	} else {
 		client = &http.Client{}
 	}
+	tsBegin := time.Now()
 	resp, err := client.Do(request)
 	if err != nil {
 		log.Println(err)
@@ -84,7 +89,10 @@ func uploadFileRequest(uri string, filePath string, isHTTP3 bool) error {
 		log.Println(err)
 		return err
 	}
-	log.Println(string(body))
+	tsEnd := time.Now()
+	tsCost := tsEnd.Sub(tsBegin)
+	speed := totalSent * 1000 / int64(tsCost/time.Millisecond)
+	englishPrinter.Printf("\rsent %d bytes in %+v at %d B/s, received response: %s\n", totalSent, tsCost, speed, string(body))
 	return nil
 }
 
@@ -137,7 +145,6 @@ func downloadFileRequest(uri string, filePath string, isHTTP3 bool) error {
 	}
 	defer fd.Close()
 
-	englishPrinter := message.NewPrinter(language.English)
 	var totalReceived int64
 	buf := make([]byte, 32*1024)
 	for {
