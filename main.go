@@ -36,10 +36,17 @@ func printExamples() {
 	fmt.Println("\ttransfer -m relay 8080<=>http://172.16.0.1:8080 8081<=>http://172.16.0.2:8080 8082<=>http://172.16.0.3:8080")
 }
 
+func ternaryOp(condition bool, v1, v2 string) string {
+	if condition {
+		return v1
+	}
+	return v2
+}
+
 func httpsHandler(quicOnly bool) {
 	switch workMode {
 	case "server":
-		log.Println("Starting quic(http3) server at", listenAddr, ", please don't close it if you are not sure what it is doing.")
+		log.Println("Starting ", ternaryOp(quicOnly, "quic", "https"), " server at", listenAddr, ", please don't close it if you are not sure what it is doing.")
 
 		http.HandleFunc("/uploadFile", uploadFileHandler)
 		http.Handle("/", http.FileServer(http.Dir(fileServePath)))
