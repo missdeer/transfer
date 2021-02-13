@@ -84,12 +84,15 @@ func listenAndServe(addr, certFile, keyFile string, handler http.Handler, quicOn
 		handler = http.DefaultServeMux
 	}
 
+	httpServer.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !quicOnly {
+			quicServer.SetQuicHeaders(w.Header())
+		}
+		handler.ServeHTTP(w, r)
+	})
+
 	hErr := make(chan error)
 	if !quicOnly {
-		httpServer.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			quicServer.SetQuicHeaders(w.Header())
-			handler.ServeHTTP(w, r)
-		})
 		tcpAddr, err := net.ResolveTCPAddr("tcp", addr)
 		if err != nil {
 			return err
