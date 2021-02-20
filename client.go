@@ -58,6 +58,24 @@ func newfileUploadRequest(uri string, params map[string]string, paramName, fileP
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 	return req, length, err
 }
+func getHTTPClient(isHTTP3 bool) *http.Client {
+	if isHTTP3 {
+		return &http.Client{
+			Transport: &http3.RoundTripper{
+				TLSClientConfig: &tls.Config{
+					InsecureSkipVerify: insecureSkipVerify,
+				},
+			},
+		}
+	}
+	return &http.Client{
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{
+				InsecureSkipVerify: insecureSkipVerify,
+			},
+		},
+	}
+}
 
 func uploadFileRequest(uri string, filePath string, isHTTP3 bool) error {
 	extraParams := map[string]string{
@@ -70,12 +88,7 @@ func uploadFileRequest(uri string, filePath string, isHTTP3 bool) error {
 		log.Println(err)
 		return err
 	}
-	var client *http.Client
-	if isHTTP3 {
-		client = &http.Client{Transport: &http3.RoundTripper{}}
-	} else {
-		client = &http.Client{}
-	}
+	client := getHTTPClient(isHTTP3)
 	tsBegin := time.Now()
 	resp, err := client.Do(request)
 	if err != nil {
@@ -103,24 +116,7 @@ func downloadFileRequest(uri string, filePath string, isHTTP3 bool) error {
 		log.Println(err)
 		return err
 	}
-	var client *http.Client
-	if isHTTP3 {
-		client = &http.Client{
-			Transport: &http3.RoundTripper{
-				TLSClientConfig: &tls.Config{
-					InsecureSkipVerify: insecureSkipVerify,
-				},
-			},
-		}
-	} else {
-		client = &http.Client{
-			Transport: &http.Transport{
-				TLSClientConfig: &tls.Config{
-					InsecureSkipVerify: insecureSkipVerify,
-				},
-			},
-		}
-	}
+	client := getHTTPClient(isHTTP3)
 	resp, err := client.Do(req)
 	if err != nil {
 		log.Println(err)
