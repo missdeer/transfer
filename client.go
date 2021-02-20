@@ -130,7 +130,7 @@ type DownloadBlock struct {
 	buf    []byte
 }
 
-func downloadFileRequestAt(uri string, min int64, max int64, isHTTP3 bool, output chan DownloadBlock, done chan error, ctx context.Context) error {
+func downloadFileRequestAt(ctx context.Context, uri string, min int64, max int64, isHTTP3 bool, output chan DownloadBlock, done chan error) error {
 	req, err := http.NewRequest("GET", uri, nil)
 	if err != nil {
 		done <- err
@@ -212,7 +212,7 @@ func downloadFileRequest(uri string, contentLength int64, filePath string, isHTT
 		}
 
 		ctxtChild, _ := context.WithCancel(ctxt)
-		go downloadFileRequestAt(uri, min, max, isHTTP3, output, done, ctxtChild)
+		go downloadFileRequestAt(ctxtChild, uri, min, max, isHTTP3, output, done)
 	}
 
 	var totalReceived int64
