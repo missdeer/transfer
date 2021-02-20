@@ -2,12 +2,14 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"crypto/tls"
 	"fmt"
 	"io"
 	"io/ioutil"
 	"log"
 	"mime/multipart"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -73,6 +75,18 @@ func getHTTPClient(isHTTP3 bool) *http.Client {
 			TLSClientConfig: &tls.Config{
 				InsecureSkipVerify: insecureSkipVerify,
 			},
+			Dial: func(network, addr string) (net.Conn, error) {
+				conn, err := net.DialTimeout(network, addr, time.Second*30)
+				if err != nil {
+					return conn, err
+				}
+
+				tcpConn := conn.(*net.TCPConn)
+				tcpConn.SetKeepAlive(false)
+
+				return tcpConn, err
+			},
+			DisableKeepAlives: true,
 		},
 	}
 }
@@ -109,20 +123,62 @@ func uploadFileRequest(uri string, filePath string, isHTTP3 bool) error {
 	return nil
 }
 
-func downloadFileRequest(uri string, contentLength int64, filePath string, isHTTP3 bool) error {
-	tsBegin := time.Now()
+// DownloadBlock defines download content
+type DownloadBlock struct {
+	offset int64
+	length int64
+	buf    []byte
+}
+
+func downloadFileRequestAt(uri string, min int64, max int64, isHTTP3 bool, output chan DownloadBlock, done chan error, ctx context.Context) error {
 	req, err := http.NewRequest("GET", uri, nil)
 	if err != nil {
-		log.Println(err)
+		done <- err
 		return err
 	}
 	client := getHTTPClient(isHTTP3)
+
+	rangeHeader := fmt.Sprintf("bytes=%d-%d", min, max-1) // Add the data for the Range header of the form "bytes=0-100"
+	req.Header.Add("Range", rangeHeader)
 	resp, err := client.Do(req)
 	if err != nil {
-		log.Println(err)
+		done <- err
 		return err
 	}
 	defer resp.Body.Close()
+
+	offset := min
+	buf := make([]byte, 32*1024)
+	for {
+		select {
+		case <-ctx.Done():
+			goto exit
+		default:
+			nr, er := resp.Body.Read(buf)
+			if nr > 0 {
+				output <- DownloadBlock{
+					offset: offset,
+					length: int64(nr),
+					buf:    buf[0:nr],
+				}
+				offset += int64(nr)
+			}
+			if er != nil {
+				if er != io.EOF {
+					err = er
+				}
+				goto exit
+			}
+		}
+	}
+exit:
+	fmt.Printf("\nend a thread from %d to %d, total received bytes: %d\n", min, max, offset-min)
+	done <- err
+	return err
+}
+
+func downloadFileRequest(uri string, contentLength int64, filePath string, isHTTP3 bool) error {
+	tsBegin := time.Now()
 
 	dir := filepath.Dir(filePath)
 	if _, err := os.Stat(dir); os.ErrNotExist == err {
@@ -135,13 +191,35 @@ func downloadFileRequest(uri string, contentLength int64, filePath string, isHTT
 		return err
 	}
 	defer fd.Close()
+	if contentLength > 0 {
+		fd.Truncate(contentLength)
+	} else {
+		concurrentThread = 1
+	}
+
+	ctxt, cancel := context.WithCancel(context.Background())
+
+	lenSub := contentLength / int64(concurrentThread) // Bytes for each Go-routine
+	diff := contentLength % int64(concurrentThread)   // Get the remaining for the last request
+	output := make(chan DownloadBlock)
+	done := make(chan error)
+	for i := 0; i < concurrentThread; i++ {
+		min := lenSub * int64(i) // Min range
+		max := min + lenSub      // Max range
+
+		if i == concurrentThread-1 {
+			max += diff // Add the remaining bytes in the last request
+		}
+
+		ctxtChild, _ := context.WithCancel(ctxt)
+		go downloadFileRequestAt(uri, min, max, isHTTP3, output, done, ctxtChild)
+	}
 
 	var totalReceived int64
-	buf := make([]byte, 32*1024)
-	for {
-		nr, er := resp.Body.Read(buf)
-		if nr > 0 {
-			nw, ew := fd.Write(buf[0:nr])
+	for i := 0; i < concurrentThread && (err == nil || err == io.EOF); {
+		select {
+		case b := <-output:
+			nw, ew := fd.WriteAt(b.buf[0:int(b.length)], b.offset)
 			if nw > 0 {
 				totalReceived += int64(nw)
 			}
@@ -149,23 +227,20 @@ func downloadFileRequest(uri string, contentLength int64, filePath string, isHTT
 				err = ew
 				break
 			}
-			if nr != nw {
+			if b.length != int64(nw) {
 				err = io.ErrShortWrite
 				break
 			}
 			tsEnd := time.Now()
 			tsCost := tsEnd.Sub(tsBegin)
 			speed := totalReceived * 1000 / int64(tsCost/time.Millisecond)
-			englishPrinter.Printf("\rreceived and wrote %d/%d bytes in %+v at %d B/s", totalReceived, contentLength, tsCost, speed)
-		}
-		if er != nil {
-			if er != io.EOF {
-				err = er
-			}
-			break
+			englishPrinter.Printf("\rreceived and wrote %d/%d bytes to offset %d in %+v at %d B/s", totalReceived, contentLength, b.offset, tsCost, speed)
+		case err = <-done:
+			i++
 		}
 	}
 
+	cancel()
 	fmt.Printf("\n")
 	if err != nil && err != io.EOF {
 		log.Println(err)
@@ -185,13 +260,7 @@ func getHTTPResponseHeader(uri string) (http.Header, error) {
 		log.Println(err)
 		return nil, err
 	}
-	client := &http.Client{
-		Transport: &http.Transport{
-			TLSClientConfig: &tls.Config{
-				InsecureSkipVerify: insecureSkipVerify,
-			},
-		},
-	}
+	client := getHTTPClient(false)
 	resp, err := client.Do(req)
 	if err != nil {
 		log.Println(err)
