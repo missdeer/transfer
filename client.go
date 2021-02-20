@@ -109,7 +109,7 @@ func uploadFileRequest(uri string, filePath string, isHTTP3 bool) error {
 	return nil
 }
 
-func downloadFileRequest(uri string, filePath string, isHTTP3 bool) error {
+func downloadFileRequest(uri string, contentLength int64, filePath string, isHTTP3 bool) error {
 	tsBegin := time.Now()
 	req, err := http.NewRequest("GET", uri, nil)
 	if err != nil {
@@ -124,11 +124,6 @@ func downloadFileRequest(uri string, filePath string, isHTTP3 bool) error {
 	}
 	defer resp.Body.Close()
 
-	contentLength := resp.Header.Get("Content-Length")
-	expectedLength, err := strconv.ParseInt(contentLength, 10, 64)
-	if err != nil {
-		log.Println("parsing content-length", err)
-	}
 	dir := filepath.Dir(filePath)
 	if _, err := os.Stat(dir); os.ErrNotExist == err {
 		os.MkdirAll(dir, 0755)
@@ -161,7 +156,7 @@ func downloadFileRequest(uri string, filePath string, isHTTP3 bool) error {
 			tsEnd := time.Now()
 			tsCost := tsEnd.Sub(tsBegin)
 			speed := totalReceived * 1000 / int64(tsCost/time.Millisecond)
-			englishPrinter.Printf("\rreceived and wrote %d/%d bytes in %+v at %d B/s", totalReceived, expectedLength, tsCost, speed)
+			englishPrinter.Printf("\rreceived and wrote %d/%d bytes in %+v at %d B/s", totalReceived, contentLength, tsCost, speed)
 		}
 		if er != nil {
 			if er != io.EOF {
@@ -184,15 +179,11 @@ func downloadFileRequest(uri string, filePath string, isHTTP3 bool) error {
 	return err
 }
 
-func isHTTP3Enabled(uri string) (string, bool, error) {
-	if strings.ToLower(protocol) == "quic" {
-		return uri, true, nil
-	}
-
+func getHTTPResponseHeader(uri string) (http.Header, error) {
 	req, err := http.NewRequest("HEAD", uri, nil)
 	if err != nil {
 		log.Println(err)
-		return uri, false, err
+		return nil, err
 	}
 	client := &http.Client{
 		Transport: &http.Transport{
@@ -204,11 +195,24 @@ func isHTTP3Enabled(uri string) (string, bool, error) {
 	resp, err := client.Do(req)
 	if err != nil {
 		log.Println(err)
-		return uri, false, err
+		return nil, err
 	}
 	defer resp.Body.Close()
 
-	altSvc := resp.Header.Get("alt-svc")
+	return resp.Header, nil
+}
+
+func getContentLength(headers http.Header) (int64, error) {
+	contentLength := headers.Get("Content-Length")
+	expectedLength, err := strconv.ParseInt(contentLength, 10, 64)
+	if err != nil {
+		log.Println("parsing content-length", err)
+	}
+	return expectedLength, err
+}
+
+func isHTTP3Enabled(uri string, headers http.Header) (string, bool, error) {
+	altSvc := headers.Get("alt-svc")
 	ss := strings.Split(altSvc, ",")
 	for _, s := range ss {
 		h3ma := regHTTP3AltSvc.FindAllStringSubmatch(s, -1)

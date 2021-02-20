@@ -24,6 +24,7 @@ var (
 	keyFile            string
 	outputFile         string
 	insecureSkipVerify bool
+	concurrentThread   int
 )
 
 func printExamples() {
@@ -128,6 +129,7 @@ func main() {
 	flag.StringVarP(&outputFile, "output", "o", "", "save downloaded file to local path, download mode only")
 	flag.StringVarP(&certFile, "cert", "t", "cert.pem", "SSL certificate file path")
 	flag.StringVarP(&keyFile, "key", "k", "key.pem", "SSL key file path")
+	flag.IntVarP(&concurrentThread, "thread", "x", 1, "download concurrent thread count, download mode only")
 	flag.BoolVarP(&insecureSkipVerify, "insecureSkipVerify", "", false, "insecure skip SSL verify")
 	flag.BoolVarP(&help, "help", "h", false, "show this help message")
 	flag.Parse()
@@ -140,12 +142,31 @@ func main() {
 	}
 	switch workMode {
 	case "download":
-		uri, isHTTP3, _ := isHTTP3Enabled(serverAddr)
+		uri := serverAddr
+		isHTTP3 := false
+		var contentLength int64 = 0
+		if headers, err := getHTTPResponseHeader(serverAddr); err == nil {
+			if strings.ToLower(protocol) == "quic" {
+				isHTTP3 = true
+			} else {
+				uri, isHTTP3, _ = isHTTP3Enabled(serverAddr, headers)
+			}
+			contentLength, _ = getContentLength(headers)
+		}
+
 		log.Printf("downloading %s to %s, isHTTP3Enabled=%t\n", uri, outputFile, isHTTP3)
-		downloadFileRequest(uri, outputFile, isHTTP3)
+		downloadFileRequest(uri, contentLength, outputFile, isHTTP3)
 		return
 	case "upload":
-		uri, isHTTP3, _ := isHTTP3Enabled(serverAddr)
+		uri := serverAddr
+		isHTTP3 := false
+		if strings.ToLower(protocol) == "quic" {
+			isHTTP3 = true
+		} else {
+			if headers, err := getHTTPResponseHeader(serverAddr); err == nil {
+				uri, isHTTP3, _ = isHTTP3Enabled(serverAddr, headers)
+			}
+		}
 		args := flag.Args()
 		for _, f := range args {
 			log.Printf("uploading %s to %s, isHTTP3Enabled=%t\n", f, uri, isHTTP3)
