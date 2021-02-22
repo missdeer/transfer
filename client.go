@@ -148,12 +148,12 @@ func downloadFileRequestAt(ctx context.Context, uri string, min int64, max int64
 	defer resp.Body.Close()
 
 	offset := min
-	buf := make([]byte, 32*1024)
 	for {
 		select {
 		case <-ctx.Done():
 			goto exit
 		default:
+			buf := make([]byte, 32*1024)
 			nr, er := resp.Body.Read(buf)
 			if nr > 0 {
 				output <- DownloadBlock{
