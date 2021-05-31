@@ -1,4 +1,4 @@
-package main
+package keypair
 
 import (
 	"crypto/tls"
@@ -18,7 +18,7 @@ type keypairReloader struct {
 	keyPath  string
 }
 
-func newKeypairReloader(certPath, keyPath string) (*keypairReloader, error) {
+func NewKeypairReloader(certPath, keyPath string) (*keypairReloader, error) {
 	result := &keypairReloader{
 		certPath: certPath,
 		keyPath:  keyPath,

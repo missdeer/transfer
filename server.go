@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 
 	"github.com/lucas-clemente/quic-go/http3"
+	"github.com/missdeer/transfer/keypair"
 )
 
 func uploadFileHandler(w http.ResponseWriter, r *http.Request) {
@@ -51,7 +52,7 @@ func uploadFileHandler(w http.ResponseWriter, r *http.Request) {
 func listenAndServe(addr, certFile, keyFile string, handler http.Handler, quicOnly bool) error {
 	// Load certs
 	var err error
-	kpr, err := newKeypairReloader(certFile, keyFile)
+	kpr, err := keypair.NewKeypairReloader(certFile, keyFile)
 	if err != nil {
 		return err
 	}
