@@ -22,6 +22,7 @@ var (
 func printExamples() {
 	fmt.Println("Examples:")
 	fmt.Println("\tquicplugin")
+	fmt.Println("\tquicplugin -k example.com.key -t fullchain.cer")
 }
 
 func listenAndServe(certFile, keyFile string, handler http.Handler) error {
@@ -98,7 +99,7 @@ func main() {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		u := *r.URL
-		u.Host = r.Host
+		u.Host = "127.0.0.1"
 		u.Scheme = "http"
 		u.Path = "/"
 		proxy := httputil.NewSingleHostReverseProxy(&u)
