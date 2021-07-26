@@ -280,6 +280,35 @@ func getContentLength(headers http.Header) (int64, error) {
 	return expectedLength, err
 }
 
+func needDownload(headers http.Header, contentLength int64, filePath string) bool {
+	fi, err := os.Stat(filePath)
+	if os.IsNotExist(err) {
+		return true
+	}
+
+	if fi.Size() != contentLength {
+		return true
+	}
+
+	lastModified := headers.Get("Last-Modified")
+	if lastModified == "" {
+		return true
+	}
+
+	const layout = "Mon, 02 Jan 2006 15:04:05 MST"
+	fileLastModifiedTime, err := time.Parse(layout, lastModified)
+	if err != nil {
+		log.Println(err)
+		return true
+	}
+
+	if fileLastModifiedTime.After(fi.ModTime()) {
+		return true
+	}
+
+	return false
+}
+
 func isHTTP3Enabled(uri string, headers http.Header) (string, bool, error) {
 	altSvc := headers.Get("alt-svc")
 	ss := strings.Split(altSvc, ",")

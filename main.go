@@ -145,7 +145,8 @@ func main() {
 		uri := serverAddr
 		isHTTP3 := false
 		var contentLength int64 = 0
-		if headers, err := getHTTPResponseHeader(serverAddr); err == nil {
+		headers, err := getHTTPResponseHeader(serverAddr)
+		if err == nil {
 			if strings.ToLower(protocol) == "quic" {
 				isHTTP3 = true
 			} else {
@@ -154,8 +155,10 @@ func main() {
 			contentLength, _ = getContentLength(headers)
 		}
 
-		log.Printf("downloading %s to %s, isHTTP3Enabled=%t\n", uri, outputFile, isHTTP3)
-		downloadFileRequest(uri, contentLength, outputFile, isHTTP3)
+		if needDownload(headers, contentLength, outputFile) {
+			log.Printf("downloading %s to %s, isHTTP3Enabled=%t\n", uri, outputFile, isHTTP3)
+			downloadFileRequest(uri, contentLength, outputFile, isHTTP3)
+		}
 		return
 	case "upload":
 		uri := serverAddr
