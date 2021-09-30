@@ -132,7 +132,7 @@ func main() {
 	flag.StringVarP(&certFile, "cert", "t", "cert.pem", "SSL certificate file path")
 	flag.StringVarP(&keyFile, "key", "k", "key.pem", "SSL key file path")
 	flag.IntVarP(&concurrentThread, "thread", "x", 1, "download concurrent thread count, download mode only")
-	flag.IntVarP(&retryTimes, "retry", "r", math.MaxInt, "retry times")
+	flag.IntVarP(&retryTimes, "retry", "r", math.MaxInt, "retry times, if < 0, means infinitely")
 	flag.BoolVarP(&insecureSkipVerify, "insecureSkipVerify", "", false, "insecure skip SSL verify")
 	flag.BoolVarP(&help, "help", "h", false, "show this help message")
 	flag.Parse()
