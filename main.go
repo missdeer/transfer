@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"log"
+	"math"
 	"net/http"
 	"strings"
 	"sync"
@@ -25,6 +26,7 @@ var (
 	outputFile         string
 	insecureSkipVerify bool
 	concurrentThread   int
+	retryTimes         int
 )
 
 func printExamples() {
@@ -130,6 +132,7 @@ func main() {
 	flag.StringVarP(&certFile, "cert", "t", "cert.pem", "SSL certificate file path")
 	flag.StringVarP(&keyFile, "key", "k", "key.pem", "SSL key file path")
 	flag.IntVarP(&concurrentThread, "thread", "x", 1, "download concurrent thread count, download mode only")
+	flag.IntVarP(&retryTimes, "retry", "r", math.MaxInt, "retry times")
 	flag.BoolVarP(&insecureSkipVerify, "insecureSkipVerify", "", false, "insecure skip SSL verify")
 	flag.BoolVarP(&help, "help", "h", false, "show this help message")
 	flag.Parse()

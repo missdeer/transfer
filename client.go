@@ -136,18 +136,23 @@ func downloadFileRequestAt(ctx context.Context, uri string, min int64, max int64
 		done <- err
 		return err
 	}
-	client := getHTTPClient(isHTTP3)
-
+	retry := 1
 	rangeHeader := fmt.Sprintf("bytes=%d-%d", min, max-1) // Add the data for the Range header of the form "bytes=0-100"
 	req.Header.Add("Range", rangeHeader)
-	resp, err := client.Do(req)
-	if err != nil {
-		done <- err
-		return err
-	}
-	defer resp.Body.Close()
 
 	offset := min
+start:
+	client := getHTTPClient(isHTTP3)
+	resp, err := client.Do(req)
+	if err != nil {
+		if retry < retryTimes {
+			englishPrinter.Printf("request bytes=%d-%d error: %+v, retry it %d time\n", min, max-1, err, retry)
+			retry++
+			goto start
+		}
+		goto exit
+	}
+	defer resp.Body.Close()
 	for {
 		select {
 		case <-ctx.Done():
@@ -165,6 +170,17 @@ func downloadFileRequestAt(ctx context.Context, uri string, min int64, max int64
 			}
 			if er != nil {
 				if er != io.EOF {
+					if retry < retryTimes {
+						englishPrinter.Printf("request bytes=%d-%d received %d bytes but got error: %+v, retry it %d time\n", min, max-1, offset-min, er, retry)
+						retry++
+						req, err = http.NewRequest("GET", uri, nil)
+						if err != nil {
+							goto exit
+						}
+						rangeHeader = fmt.Sprintf("bytes=%d-%d", offset, max-1) // fix new requested range
+						req.Header.Add("Range", rangeHeader)
+						goto start
+					}
 					err = er
 				}
 				goto exit
@@ -172,7 +188,7 @@ func downloadFileRequestAt(ctx context.Context, uri string, min int64, max int64
 		}
 	}
 exit:
-	fmt.Printf("\nend a thread from %d to %d, total received bytes: %d\n", min, max, offset-min)
+	englishPrinter.Printf("\nend a thread from %d to %d, total received bytes: %d\n", min, max, offset-min)
 	done <- err
 	return err
 }
@@ -237,6 +253,7 @@ func downloadFileRequest(uri string, contentLength int64, filePath string, isHTT
 			englishPrinter.Printf("\rreceived and wrote %d/%d bytes to offset %d in %+v at %d B/s", totalReceived, contentLength, b.offset, tsCost, speed)
 		case err = <-done:
 			i++
+			fmt.Printf("\n%d/%d thread is ended.\n", i, concurrentThread)
 		}
 	}
 
