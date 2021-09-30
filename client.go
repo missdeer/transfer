@@ -145,7 +145,7 @@ start:
 	client := getHTTPClient(isHTTP3)
 	resp, err := client.Do(req)
 	if err != nil {
-		if retryTimes < -1 || retry < retryTimes {
+		if retryTimes < 0 || retry < retryTimes {
 			englishPrinter.Printf("request bytes=%d-%d error: %+v, retry it %d time\n", min, max-1, err, retry)
 			retry++
 			goto start
@@ -170,7 +170,7 @@ start:
 			}
 			if er != nil {
 				if er != io.EOF {
-					if retryTimes < -1 || retry < retryTimes {
+					if retryTimes < 0 || retry < retryTimes {
 						englishPrinter.Printf("request bytes=%d-%d received %d bytes but got error: %+v, retry it %d time\n", min, max-1, offset-min, er, retry)
 						retry++
 						req, err = http.NewRequest("GET", uri, nil)
