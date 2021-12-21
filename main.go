@@ -25,6 +25,7 @@ var (
 	keyFile            string
 	outputFile         string
 	insecureSkipVerify bool
+	reuseThread        bool
 	concurrentThread   int
 	retryTimes         int
 )
@@ -134,6 +135,7 @@ func main() {
 	flag.IntVarP(&concurrentThread, "thread", "x", 1, "download concurrent thread count, download mode only")
 	flag.IntVarP(&retryTimes, "retry", "r", math.MaxInt, "retry times, if < 0, means infinitely")
 	flag.BoolVarP(&insecureSkipVerify, "insecureSkipVerify", "", false, "insecure skip SSL verify")
+	flag.BoolVarP(&reuseThread, "reuseThread", "", true, "reuse thread, download mode only")
 	flag.BoolVarP(&help, "help", "h", false, "show this help message")
 	flag.Parse()
 

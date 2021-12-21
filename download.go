@@ -8,7 +8,13 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
+)
+
+const (
+	readBufSize              = 32 * 1024
+	leastTryBufferSize int64 = 256 * 1024
 )
 
 // DownloadBlock defines download content
@@ -17,6 +23,72 @@ type DownloadBlock struct {
 	length int64
 	buf    []byte
 }
+
+// DownloadRange defines download progress in a block
+type DownloadRange struct {
+	start   int64
+	end     int64
+	current int64
+}
+
+// DownloadProgress defines download progress total
+type DownloadProgress struct {
+	sync.Mutex
+	progress []*DownloadRange
+}
+
+// addRange add a range to download progress
+func (dp *DownloadProgress) addRange(start, end int64) {
+	dp.Lock()
+	dp.progress = append(dp.progress, &DownloadRange{
+		start:   start,
+		end:     end,
+		current: 0,
+	})
+	dp.Unlock()
+}
+
+// updateRnage update a range in download progress
+func (dp *DownloadProgress) updateRange(start, end, current int64) {
+	dp.Lock()
+	for _, r := range dp.progress {
+		if r.start == start && r.end == end {
+			r.current = current
+			break
+		}
+	}
+	dp.Unlock()
+}
+
+// pickLargestUndownloadedRange pick the largest undownloaded range
+func (dp *DownloadProgress) pickLargestUndownloadedRange() (start int64, end int64, ok bool) {
+	dp.Lock()
+	defer dp.Unlock()
+	var maxRange *DownloadRange
+	for _, r := range progress.progress {
+		if maxRange == nil || r.end-r.current > maxRange.end-maxRange.current {
+			maxRange = r
+		}
+	}
+	if maxRange.end-maxRange.current < leastTryBufferSize {
+		return 0, 0, false
+	}
+
+	end = maxRange.end
+	start = maxRange.current + (maxRange.end-maxRange.current)/2 + 1
+	dp.progress = append(dp.progress, &DownloadRange{
+		start:   start,
+		end:     end,
+		current: 0,
+	})
+	maxRange.end = start - 1
+
+	return start, end, true
+}
+
+var (
+	progress DownloadProgress
+)
 
 func downloadFileRequestAt(ctx context.Context, uri string, min int64, max int64, isHTTP3 bool, output chan DownloadBlock, done chan error) error {
 	req, err := http.NewRequest("GET", uri, nil)
@@ -46,7 +118,7 @@ start:
 		case <-ctx.Done():
 			goto exit
 		default:
-			buf := make([]byte, 32*1024)
+			buf := make([]byte, readBufSize)
 			nr, er := resp.Body.Read(buf)
 			if nr > 0 {
 				output <- DownloadBlock{
@@ -55,6 +127,17 @@ start:
 					buf:    buf[0:nr],
 				}
 				offset += int64(nr)
+				progress.updateRange(min, max, offset)
+				if reuseThread && offset >= max {
+					if newMin, newMax, ok := progress.pickLargestUndownloadedRange(); ok {
+						englishPrinter.Printf("\nend a block from %d to %d, total received bytes: %d, start new block from %d to %d\n", min, max, offset-min, newMin, newMax)
+						downloadFileRequestAt(ctx, uri, newMin, newMax, isHTTP3, output, done)
+						return nil
+					} else {
+						err = er
+						goto exit
+					}
+				}
 			}
 			if er != nil {
 				if er != io.EOF {
@@ -116,6 +199,7 @@ func downloadFileRequest(uri string, contentLength int64, filePath string, isHTT
 		}
 
 		ctxtChild, _ := context.WithCancel(ctxt)
+		progress.addRange(min, max)
 		go downloadFileRequestAt(ctxtChild, uri, min, max, isHTTP3, output, done)
 	}
 
