@@ -136,7 +136,7 @@ func main() {
 	flag.StringVarP(&keyFile, "key", "k", "key.pem", "SSL key file path")
 	flag.IntVarP(&concurrentThread, "thread", "x", 1, "download concurrent thread count, download mode only")
 	flag.IntVarP(&retryTimes, "retry", "r", math.MaxInt, "retry times, if < 0, means infinitely")
-	flag.Int64VarP(&readBufSize, "readBufSize", "b", 8*1024, "read buffer size, download mode only")
+	flag.Int64VarP(&readBufSize, "readBufSize", "b", 8*1024, "read buffer size ~ [4096, 32768], download mode only")
 	flag.BoolVarP(&insecureSkipVerify, "insecureSkipVerify", "", false, "insecure skip SSL verify")
 	flag.BoolVarP(&reuseThread, "reuseThread", "", true, "reuse thread, download mode only")
 	flag.BoolVarP(&help, "help", "h", false, "show this help message")
@@ -152,6 +152,12 @@ func main() {
 	case "download":
 		uri := serverAddr
 		isHTTP3 := false
+		if readBufSize > 32*1024 {
+			readBufSize = 32 * 1024
+		}
+		if readBufSize < 4*1024 {
+			readBufSize = 4 * 1024
+		}
 		leastTryBufferSize = readBufSize * 10
 		var contentLength int64 = 0
 		headers, err := getHTTPResponseHeader(serverAddr)
