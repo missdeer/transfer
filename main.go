@@ -29,6 +29,7 @@ var (
 	concurrentThread   int
 	retryTimes         int
 	readBufSize        int64
+	leastTryBufferSize int64
 )
 
 func printExamples() {
@@ -151,6 +152,7 @@ func main() {
 	case "download":
 		uri := serverAddr
 		isHTTP3 := false
+		leastTryBufferSize = readBufSize * 10
 		var contentLength int64 = 0
 		headers, err := getHTTPResponseHeader(serverAddr)
 		if err == nil {

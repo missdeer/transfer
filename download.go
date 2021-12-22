@@ -12,10 +12,6 @@ import (
 	"time"
 )
 
-const (
-	leastTryBufferSize int64 = 256 * 1024
-)
-
 // DownloadBlock defines download content
 type DownloadBlock struct {
 	offset int64
@@ -52,7 +48,7 @@ func (dp *DownloadProgress) removeRange(start, end int64) {
 	dp.Lock()
 	defer dp.Unlock()
 	for i, r := range dp.progress {
-		if r.start == start && r.end == end && r.current >= r.end {
+		if r.start == start {
 			dp.progress = append(dp.progress[:i], dp.progress[i+1:]...)
 			return
 		}
@@ -60,15 +56,16 @@ func (dp *DownloadProgress) removeRange(start, end int64) {
 }
 
 // updateRnage update a range in download progress
-func (dp *DownloadProgress) updateRange(start, end, current int64) {
+func (dp *DownloadProgress) updateRange(start, end, current int64) int64 {
 	dp.Lock()
+	defer dp.Unlock()
 	for _, r := range dp.progress {
-		if r.start == start && r.end == end {
+		if r.start == start {
 			r.current = current
-			break
+			return r.end
 		}
 	}
-	dp.Unlock()
+	return end
 }
 
 // pickLargestUndownloadedRange pick the largest undownloaded range
@@ -82,12 +79,12 @@ func (dp *DownloadProgress) pickLargestUndownloadedRange() (start int64, end int
 			maxRange = r
 		}
 	}
-	if maxRange.end-maxRange.current < leastTryBufferSize {
+	if maxRange == nil || maxRange.end-maxRange.current < leastTryBufferSize {
 		return 0, 0, false
 	}
 
 	end = maxRange.end
-	start = maxRange.current + (maxRange.end-maxRange.current)/2 + 1
+	start = maxRange.current + (maxRange.end-maxRange.current)/2
 	dp.progress = append(dp.progress, &DownloadRange{
 		start:   start,
 		end:     end,
@@ -95,7 +92,7 @@ func (dp *DownloadProgress) pickLargestUndownloadedRange() (start int64, end int
 	})
 	//englishPrinter.Printf("\nresize origin undownloaded range from %d-%d to %d-%d\n", maxRange.start, maxRange.end, maxRange.start, start-1)
 	//englishPrinter.Printf("\npick new undownloaded range from %d-%d, %d ranges left\n", start, end, len(dp.progress))
-	maxRange.end = start - 1
+	maxRange.end = start
 
 	return start, end, true
 }
@@ -135,13 +132,16 @@ start:
 			buf := make([]byte, readBufSize)
 			nr, er := resp.Body.Read(buf)
 			if nr > 0 {
+				if offset+int64(nr) > max {
+					nr = int(max - offset)
+				}
 				output <- DownloadBlock{
 					offset: offset,
 					length: int64(nr),
 					buf:    buf[0:nr],
 				}
 				offset += int64(nr)
-				progress.updateRange(min, max, offset)
+				max = progress.updateRange(min, max, offset)
 				if reuseThread && offset >= max {
 					progress.removeRange(min, max)
 					if newMin, newMax, ok := progress.pickLargestUndownloadedRange(); ok {
