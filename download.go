@@ -13,7 +13,6 @@ import (
 )
 
 const (
-	readBufSize              = 32 * 1024
 	leastTryBufferSize int64 = 256 * 1024
 )
 
@@ -43,9 +42,21 @@ func (dp *DownloadProgress) addRange(start, end int64) {
 	dp.progress = append(dp.progress, &DownloadRange{
 		start:   start,
 		end:     end,
-		current: 0,
+		current: start,
 	})
 	dp.Unlock()
+}
+
+// removeRange remove a range from download progress
+func (dp *DownloadProgress) removeRange(start, end int64) {
+	dp.Lock()
+	defer dp.Unlock()
+	for i, r := range dp.progress {
+		if r.start == start && r.end == end && r.current >= r.end {
+			dp.progress = append(dp.progress[:i], dp.progress[i+1:]...)
+			return
+		}
+	}
 }
 
 // updateRnage update a range in download progress
@@ -67,6 +78,7 @@ func (dp *DownloadProgress) pickLargestUndownloadedRange() (start int64, end int
 	var maxRange *DownloadRange
 	for _, r := range progress.progress {
 		if maxRange == nil || r.end-r.current > maxRange.end-maxRange.current {
+			//englishPrinter.Printf("\nfound a new range from %d to %d, current=%d, left size=%d\n", r.start, r.end, r.current, r.end-r.current)
 			maxRange = r
 		}
 	}
@@ -79,8 +91,10 @@ func (dp *DownloadProgress) pickLargestUndownloadedRange() (start int64, end int
 	dp.progress = append(dp.progress, &DownloadRange{
 		start:   start,
 		end:     end,
-		current: 0,
+		current: start,
 	})
+	//englishPrinter.Printf("\nresize origin undownloaded range from %d-%d to %d-%d\n", maxRange.start, maxRange.end, maxRange.start, start-1)
+	//englishPrinter.Printf("\npick new undownloaded range from %d-%d, %d ranges left\n", start, end, len(dp.progress))
 	maxRange.end = start - 1
 
 	return start, end, true
@@ -106,7 +120,7 @@ start:
 	resp, err := client.Do(req)
 	if err != nil {
 		if retryTimes < 0 || retry < retryTimes {
-			englishPrinter.Printf("request bytes=%d-%d error: %+v, retry it %d time\n", min, max-1, err, retry)
+			//englishPrinter.Printf("request bytes=%d-%d error: %+v, retry it %d time\n", min, max-1, err, retry)
 			retry++
 			goto start
 		}
@@ -129,8 +143,9 @@ start:
 				offset += int64(nr)
 				progress.updateRange(min, max, offset)
 				if reuseThread && offset >= max {
+					progress.removeRange(min, max)
 					if newMin, newMax, ok := progress.pickLargestUndownloadedRange(); ok {
-						englishPrinter.Printf("\nend a block from %d to %d, total received bytes: %d, start new block from %d to %d\n", min, max, offset-min, newMin, newMax)
+						//englishPrinter.Printf("\nend a block from %d to %d, total received bytes: %d, start new block from %d to %d\n", min, max, offset-min, newMin, newMax)
 						downloadFileRequestAt(ctx, uri, newMin, newMax, isHTTP3, output, done)
 						return nil
 					} else {
