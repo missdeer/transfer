@@ -29,43 +29,39 @@ type DownloadRange struct {
 // DownloadProgress defines download progress total
 type DownloadProgress struct {
 	sync.Mutex
-	progress []*DownloadRange
+	progress map[int64]*DownloadRange
+}
+
+func NewDownloadProgress() *DownloadProgress {
+	return &DownloadProgress{
+		progress: make(map[int64]*DownloadRange),
+	}
 }
 
 // addRange add a range to download progress
 func (dp *DownloadProgress) addRange(start, end int64) {
 	dp.Lock()
-	dp.progress = append(dp.progress, &DownloadRange{
+	dp.progress[start] = &DownloadRange{
 		start:   start,
 		end:     end,
 		current: start,
-	})
+	}
 	dp.Unlock()
 }
 
 // removeRange remove a range from download progress
 func (dp *DownloadProgress) removeRange(start, end int64) {
 	dp.Lock()
-	defer dp.Unlock()
-	for i, r := range dp.progress {
-		if r.start == start {
-			dp.progress = append(dp.progress[:i], dp.progress[i+1:]...)
-			return
-		}
-	}
+	delete(dp.progress, start)
+	dp.Unlock()
 }
 
 // updateRnage update a range in download progress
 func (dp *DownloadProgress) updateRange(start, end, current int64) int64 {
 	dp.Lock()
 	defer dp.Unlock()
-	for _, r := range dp.progress {
-		if r.start == start {
-			r.current = current
-			return r.end
-		}
-	}
-	return end
+	dp.progress[start].current = current
+	return dp.progress[start].end
 }
 
 // pickLargestUndownloadedRange pick the largest undownloaded range
@@ -85,11 +81,11 @@ func (dp *DownloadProgress) pickLargestUndownloadedRange() (start int64, end int
 
 	end = maxRange.end
 	start = maxRange.current + (maxRange.end-maxRange.current)/2
-	dp.progress = append(dp.progress, &DownloadRange{
+	dp.progress[start] = &DownloadRange{
 		start:   start,
 		end:     end,
 		current: start,
-	})
+	}
 	//englishPrinter.Printf("\nresize origin undownloaded range from %d-%d to %d-%d\n", maxRange.start, maxRange.end, maxRange.start, start-1)
 	//englishPrinter.Printf("\npick new undownloaded range from %d-%d, %d ranges left\n", start, end, len(dp.progress))
 	maxRange.end = start
@@ -98,7 +94,7 @@ func (dp *DownloadProgress) pickLargestUndownloadedRange() (start int64, end int
 }
 
 var (
-	progress DownloadProgress
+	progress = NewDownloadProgress()
 )
 
 func downloadFileRequestAt(ctx context.Context, uri string, min int64, max int64, isHTTP3 bool, output chan DownloadBlock, done chan error) error {
@@ -138,7 +134,7 @@ start:
 				output <- DownloadBlock{
 					offset: offset,
 					length: int64(nr),
-					buf:    buf[0:nr],
+					buf:    buf[:nr],
 				}
 				offset += int64(nr)
 				max = progress.updateRange(min, max, offset)
