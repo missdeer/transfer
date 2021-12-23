@@ -14,9 +14,10 @@ import (
 
 // DownloadBlock defines download content
 type DownloadBlock struct {
-	offset int64
-	length int64
-	buf    []byte
+	offset      int64
+	length      int64
+	byteWritten int64
+	errWritten  error
 }
 
 // DownloadRange defines download progress in a block
@@ -94,7 +95,9 @@ func (dp *DownloadProgress) pickLargestUndownloadedRange() (start int64, end int
 }
 
 var (
-	progress = NewDownloadProgress()
+	progress     = NewDownloadProgress()
+	fd           *os.File
+	fdWriteMutex sync.Mutex
 )
 
 func downloadFileRequestAt(ctx context.Context, uri string, min int64, max int64, isHTTP3 bool, output chan DownloadBlock, done chan error) error {
@@ -107,6 +110,7 @@ func downloadFileRequestAt(ctx context.Context, uri string, min int64, max int64
 	rangeHeader := fmt.Sprintf("bytes=%d-%d", min, max-1) // Add the data for the Range header of the form "bytes=0-100"
 	req.Header.Add("Range", rangeHeader)
 
+	buf := make([]byte, readBufSize)
 	offset := min
 start:
 	client := getHTTPClient(isHTTP3)
@@ -125,16 +129,23 @@ start:
 		case <-ctx.Done():
 			goto exit
 		default:
-			buf := make([]byte, readBufSize)
 			nr, er := resp.Body.Read(buf)
 			if nr > 0 {
 				if offset+int64(nr) > max {
 					nr = int(max - offset)
 				}
+				fdWriteMutex.Lock()
+				nw, ew := fd.WriteAt(buf[:nr], offset)
+				fdWriteMutex.Unlock()
 				output <- DownloadBlock{
-					offset: offset,
-					length: int64(nr),
-					buf:    buf[:nr],
+					offset:      offset,
+					length:      int64(nr),
+					byteWritten: int64(nw),
+					errWritten:  ew,
+				}
+				if ew != nil {
+					err = ew
+					goto exit
 				}
 				offset += int64(nr)
 				max = progress.updateRange(min, max, offset)
@@ -179,11 +190,12 @@ func downloadFileRequest(uri string, contentLength int64, filePath string, isHTT
 	tsBegin := time.Now()
 
 	dir := filepath.Dir(filePath)
-	if _, err := os.Stat(dir); os.ErrNotExist == err {
+	_, err := os.Stat(dir)
+	if os.ErrNotExist == err {
 		os.MkdirAll(dir, 0755)
 	}
 
-	fd, err := os.OpenFile(filePath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
+	fd, err = os.OpenFile(filePath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
 	if err != nil {
 		log.Println(err)
 		return err
@@ -218,10 +230,11 @@ func downloadFileRequest(uri string, contentLength int64, filePath string, isHTT
 	for i := 0; i < concurrentThread && (err == nil || err == io.EOF); {
 		select {
 		case b := <-output:
-			nw, ew := fd.WriteAt(b.buf[0:int(b.length)], b.offset)
+			nw := b.byteWritten
 			if nw > 0 {
 				totalReceived += int64(nw)
 			}
+			ew := b.errWritten
 			if ew != nil {
 				err = ew
 				break
