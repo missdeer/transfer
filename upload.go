@@ -40,6 +40,7 @@ func newfileUploadRequest(uri string, params map[string]string, paramName, fileP
 	}
 
 	req, err := http.NewRequest("POST", uri, body)
+	SetRequestHeader(req)
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 	return req, length, err
 }

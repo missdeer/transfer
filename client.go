@@ -111,3 +111,15 @@ func isHTTP3Enabled(uri string, headers http.Header) (string, bool, error) {
 	}
 	return uri, false, nil
 }
+
+func SetRequestHeader(req *http.Request) {
+	for _, v := range headers {
+		index := strings.Index(v, ":")
+		if index == -1 {
+			continue
+		}
+		key := strings.TrimSpace(v[:index])
+		value := strings.TrimSpace(v[index+1:])
+		req.Header.Set(key, value)
+	}
+}

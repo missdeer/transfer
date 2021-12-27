@@ -33,6 +33,7 @@ var (
 	retryTimes         int
 	readBufSize        int64
 	leastTryBufferSize int64
+	headers            []string
 
 	englishPrinter = message.NewPrinter(language.English)
 	logStderr      = log.New(os.Stderr, "", 0)
@@ -133,6 +134,7 @@ func httpHandler() {
 
 func main() {
 	help := false
+	flag.StringArrayVarP(&headers, "header", "H", []string{}, "Add header to request")
 	flag.StringVarP(&protocol, "protocol", "p", "http", "transfer protocol, candidates: http, https, quic")
 	flag.StringVarP(&workMode, "mode", "m", "server", "work mode, candidates: server, download, upload, proxy, relay")
 	flag.StringVarP(&fileServePath, "directory", "d", ".", "serve directory path, server mode only")

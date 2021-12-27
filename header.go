@@ -10,6 +10,8 @@ func getHTTPResponseHeader(uri string) (http.Header, error) {
 		logStderr.Println(err)
 		return nil, err
 	}
+
+	SetRequestHeader(req)
 	client := getHTTPClient(false)
 	resp, err := client.Do(req)
 	if err != nil {

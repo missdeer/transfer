@@ -104,6 +104,7 @@ func downloadFileRequestAt(ctx context.Context, uri string, min int64, max int64
 		done <- err
 		return err
 	}
+	SetRequestHeader(req)
 	retry := 1
 	rangeHeader := fmt.Sprintf("bytes=%d-%d", min, max-1) // Add the data for the Range header of the form "bytes=0-100"
 	req.Header.Add("Range", rangeHeader)
@@ -160,13 +161,14 @@ start:
 			if er != nil {
 				if er != io.EOF {
 					if retryTimes < 0 || retry < retryTimes {
-						logs := englishPrinter.Sprintf("request bytes=%d-%d received %d bytes but got error: %+v, retry it %d time\n", min, max-1, offset-min, er, retry)
+						logs := englishPrinter.Sprintf("\nrequest bytes=%d-%d received %d bytes but got error: %+v, retry it %d time\n", min, max-1, offset-min, er, retry)
 						logStdout.Println(logs)
 						retry++
 						req, err = http.NewRequest("GET", uri, nil)
 						if err != nil {
 							goto exit
 						}
+						SetRequestHeader(req)
 						rangeHeader = fmt.Sprintf("bytes=%d-%d", offset, max-1) // fix new requested range
 						req.Header.Add("Range", rangeHeader)
 						goto start
@@ -244,11 +246,10 @@ func downloadFileRequest(uri string, contentLength int64, filePath string, isHTT
 			tsEnd := time.Now()
 			tsCost := tsEnd.Sub(tsBegin)
 			speed := totalReceived * 1000 / int64(tsCost/time.Millisecond)
-			logs := englishPrinter.Sprintf("\rreceived and wrote %d/%d bytes to offset %d in %+v at %d B/s", totalReceived, contentLength, b.offset, tsCost, speed)
-			logStdout.Println(logs)
+			englishPrinter.Printf("\rreceived and wrote %d/%d bytes to offset %d in %+v at %d B/s", totalReceived, contentLength, b.offset, tsCost, speed)
 		case err = <-done:
 			i++
-			logStdout.Println("\n%d/%d thread is ended.\n", i, concurrentThread)
+			logStdout.Printf("\n%d/%d thread is ended.\n", i, concurrentThread)
 		}
 	}
 
