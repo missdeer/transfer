@@ -95,9 +95,8 @@ func (dp *DownloadProgress) pickLargestUndownloadedRange() (start int64, end int
 }
 
 var (
-	progress     = NewDownloadProgress()
-	fd           *os.File
-	fdWriteMutex sync.Mutex
+	progress = NewDownloadProgress()
+	fd       *os.File
 )
 
 func downloadFileRequestAt(ctx context.Context, uri string, min int64, max int64, isHTTP3 bool, output chan DownloadBlock, done chan error) error {
@@ -134,9 +133,7 @@ start:
 				if offset+int64(nr) > max {
 					nr = int(max - offset)
 				}
-				fdWriteMutex.Lock()
 				nw, ew := fd.WriteAt(buf[:nr], offset)
-				fdWriteMutex.Unlock()
 				output <- DownloadBlock{
 					offset:      offset,
 					length:      int64(nr),
