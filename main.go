@@ -6,6 +6,7 @@ import (
 	"math"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 
@@ -136,11 +137,11 @@ func main() {
 	help := false
 	flag.StringArrayVarP(&headers, "header", "H", []string{}, "Add header to request")
 	flag.StringVarP(&protocol, "protocol", "p", "http", "transfer protocol, candidates: http, https, quic")
-	flag.StringVarP(&workMode, "mode", "m", "server", "work mode, candidates: server, download, upload, proxy, relay")
+	flag.StringVarP(&workMode, "mode", "m", "download", "work mode, candidates: server, download, upload, proxy, relay")
 	flag.StringVarP(&fileServePath, "directory", "d", ".", "serve directory path, server mode only")
 	flag.StringVarP(&listenAddr, "listen", "l", ":8080", "listen address, server/proxy mode only")
 	flag.StringVarP(&serverAddr, "connect", "c", "", "upload server address, for example: http://172.16.0.1:8080/uploadFile, download/upload mode only")
-	flag.StringVarP(&outputFile, "output", "o", "", "save downloaded file to local path, download mode only")
+	flag.StringVarP(&outputFile, "output", "o", "", "save downloaded file to local path, leave blank to extract file name from URL path, download mode only")
 	flag.StringVarP(&certFile, "cert", "t", "cert.pem", "SSL certificate file path")
 	flag.StringVarP(&keyFile, "key", "k", "key.pem", "SSL key file path")
 	flag.IntVarP(&concurrentThread, "thread", "x", 1, "download concurrent thread count, download mode only")
@@ -160,6 +161,13 @@ func main() {
 	switch workMode {
 	case "download":
 		uri := serverAddr
+		if uri == "" {
+			if len(flag.Args()) == 1 {
+				uri = flag.Args()[0]
+			} else {
+				logStderr.Fatal("Download server address is missing.")
+			}
+		}
 		isHTTP3 := false
 		if readBufSize > 32*1024 {
 			readBufSize = 32 * 1024
@@ -168,13 +176,18 @@ func main() {
 			readBufSize = 4 * 1024
 		}
 		leastTryBufferSize = readBufSize * 10
+
+		if outputFile == "" {
+			outputFile = filepath.Base(uri)
+		}
+
 		var contentLength int64 = 0
-		headers, err := getHTTPResponseHeader(serverAddr)
+		headers, err := getHTTPResponseHeader(uri)
 		if err == nil {
 			if strings.ToLower(protocol) == "quic" {
 				isHTTP3 = true
 			} else {
-				uri, isHTTP3, _ = isHTTP3Enabled(serverAddr, headers)
+				uri, isHTTP3, _ = isHTTP3Enabled(uri, headers)
 			}
 			contentLength, _ = getContentLength(headers)
 		}
