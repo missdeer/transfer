@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
-	"log"
 	"mime/multipart"
 	"net/http"
 	"os"
@@ -53,26 +52,27 @@ func uploadFileRequest(uri string, filePath string, isHTTP3 bool) error {
 	}
 	request, totalSent, err := newfileUploadRequest(uri, extraParams, uploadFormFileName, filePath)
 	if err != nil {
-		log.Println(err)
+		logStderr.Println(err)
 		return err
 	}
 	client := getHTTPClient(isHTTP3)
 	tsBegin := time.Now()
 	resp, err := client.Do(request)
 	if err != nil {
-		log.Println(err)
+		logStderr.Println(err)
 		return err
 	}
 	defer resp.Body.Close()
 
 	body, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
-		log.Println(err)
+		logStderr.Println(err)
 		return err
 	}
 	tsEnd := time.Now()
 	tsCost := tsEnd.Sub(tsBegin)
 	speed := totalSent * 1000 / int64(tsCost/time.Millisecond)
-	englishPrinter.Printf("\rsent %d bytes in %+v at %d B/s, received response: %s\n", totalSent, tsCost, speed, string(body))
+	logs := englishPrinter.Sprintf("\rsent %d bytes in %+v at %d B/s, received response: %s\n", totalSent, tsCost, speed, string(body))
+	logStdout.Println(logs)
 	return nil
 }

@@ -2,7 +2,6 @@ package main
 
 import (
 	"crypto/tls"
-	"log"
 	"net"
 	"net/http"
 	"net/url"
@@ -13,12 +12,9 @@ import (
 	"time"
 
 	"github.com/lucas-clemente/quic-go/http3"
-	"golang.org/x/text/language"
-	"golang.org/x/text/message"
 )
 
 var (
-	englishPrinter = message.NewPrinter(language.English)
 	regHTTP3AltSvc = regexp.MustCompile(`h3\-(29|32)="(.*)";\s*ma=[0-9]+`)
 )
 
@@ -57,7 +53,7 @@ func getContentLength(headers http.Header) (int64, error) {
 	contentLength := headers.Get("Content-Length")
 	expectedLength, err := strconv.ParseInt(contentLength, 10, 64)
 	if err != nil {
-		log.Println("parsing content-length", err)
+		logStdout.Println("parsing content-length", err)
 	}
 	return expectedLength, err
 }
@@ -80,7 +76,7 @@ func needDownload(headers http.Header, contentLength int64, filePath string) boo
 	const layout = "Mon, 02 Jan 2006 15:04:05 MST"
 	fileLastModifiedTime, err := time.Parse(layout, lastModified)
 	if err != nil {
-		log.Println(err)
+		logStdout.Println(err)
 		return true
 	}
 

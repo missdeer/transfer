@@ -1,7 +1,6 @@
 package main
 
 import (
-	"log"
 	"net/http"
 
 	"github.com/go-httpproxy/httpproxy"
@@ -10,7 +9,7 @@ import (
 func onError(ctx *httpproxy.Context, where string,
 	err *httpproxy.Error, opErr error) {
 	// Log errors.
-	log.Printf("ERR: %s: %s [%s]", where, err, opErr)
+	logStderr.Printf("ERR: %s: %s [%s]\n", where, err, opErr)
 }
 
 func onAccept(ctx *httpproxy.Context, w http.ResponseWriter,
@@ -36,7 +35,7 @@ func onConnect(ctx *httpproxy.Context, host string) (ConnectAction httpproxy.Con
 func onRequest(ctx *httpproxy.Context, req *http.Request) (
 	resp *http.Response) {
 	// Log proxying requests.
-	log.Printf("INFO: Proxy: %s %s", req.Method, req.URL.String())
+	logStdout.Printf("INFO: Proxy: %s %s\n", req.Method, req.URL.String())
 	return
 }
 

@@ -1,7 +1,6 @@
 package main
 
 import (
-	"log"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
@@ -15,13 +14,13 @@ func createReverseProxy(h reverseProxyServeHandler, target string, wg *sync.Wait
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		u, err := url.Parse(target)
 		if err != nil {
-			log.Println(target, err)
+			logStderr.Println(target, err)
 			return
 		}
 
 		proxy := httputil.NewSingleHostReverseProxy(u)
 		proxy.ServeHTTP(w, r)
 	})
-	log.Fatal(h(mux))
+	logStderr.Fatal(h(mux))
 	wg.Done()
 }

@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -161,7 +160,8 @@ start:
 			if er != nil {
 				if er != io.EOF {
 					if retryTimes < 0 || retry < retryTimes {
-						englishPrinter.Printf("request bytes=%d-%d received %d bytes but got error: %+v, retry it %d time\n", min, max-1, offset-min, er, retry)
+						logs := englishPrinter.Sprintf("request bytes=%d-%d received %d bytes but got error: %+v, retry it %d time\n", min, max-1, offset-min, er, retry)
+						logStdout.Println(logs)
 						retry++
 						req, err = http.NewRequest("GET", uri, nil)
 						if err != nil {
@@ -178,7 +178,8 @@ start:
 		}
 	}
 exit:
-	englishPrinter.Printf("\nend a thread from %d to %d, total received bytes: %d\n", min, max, offset-min)
+	logs := englishPrinter.Sprintf("\nend a thread from %d to %d, total received bytes: %d\n", min, max, offset-min)
+	logStdout.Println(logs)
 	done <- err
 	return err
 }
@@ -194,7 +195,7 @@ func downloadFileRequest(uri string, contentLength int64, filePath string, isHTT
 
 	fd, err = os.OpenFile(filePath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
 	if err != nil {
-		log.Println(err)
+		logStderr.Println(err)
 		return err
 	}
 	defer fd.Close()
@@ -243,23 +244,24 @@ func downloadFileRequest(uri string, contentLength int64, filePath string, isHTT
 			tsEnd := time.Now()
 			tsCost := tsEnd.Sub(tsBegin)
 			speed := totalReceived * 1000 / int64(tsCost/time.Millisecond)
-			englishPrinter.Printf("\rreceived and wrote %d/%d bytes to offset %d in %+v at %d B/s", totalReceived, contentLength, b.offset, tsCost, speed)
+			logs := englishPrinter.Sprintf("\rreceived and wrote %d/%d bytes to offset %d in %+v at %d B/s", totalReceived, contentLength, b.offset, tsCost, speed)
+			logStdout.Println(logs)
 		case err = <-done:
 			i++
-			fmt.Printf("\n%d/%d thread is ended.\n", i, concurrentThread)
+			logStdout.Println("\n%d/%d thread is ended.\n", i, concurrentThread)
 		}
 	}
 
 	cancel()
 	fmt.Printf("\n")
 	if err != nil && err != io.EOF {
-		log.Println(err)
+		logStderr.Println(err)
 	} else {
 		tsEnd := time.Now()
 		tsCost := tsEnd.Sub(tsBegin)
 		speed := totalReceived * 1000 / int64(tsCost/time.Millisecond)
 		logs := englishPrinter.Sprintf("%d bytes received and written to %s in %+v at %d B/s\n", totalReceived, filePath, tsCost, speed)
-		log.Printf(logs)
+		logStdout.Println(logs)
 	}
 	return err
 }

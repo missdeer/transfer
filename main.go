@@ -5,10 +5,13 @@ import (
 	"log"
 	"math"
 	"net/http"
+	"os"
 	"strings"
 	"sync"
 
 	flag "github.com/spf13/pflag"
+	"golang.org/x/text/language"
+	"golang.org/x/text/message"
 )
 
 const (
@@ -30,6 +33,10 @@ var (
 	retryTimes         int
 	readBufSize        int64
 	leastTryBufferSize int64
+
+	englishPrinter = message.NewPrinter(language.English)
+	logStderr      = log.New(os.Stderr, "", 0)
+	logStdout      = log.New(os.Stdout, "", 0)
 )
 
 func printExamples() {
@@ -52,26 +59,26 @@ func ternaryOp(condition bool, v1, v2 string) string {
 func httpsHandler(quicOnly bool) {
 	switch workMode {
 	case "server":
-		log.Println("Starting ", ternaryOp(quicOnly, "quic", "https"), " server at", listenAddr, ", please don't close it if you are not sure what it is doing.")
+		logStdout.Println("Starting ", ternaryOp(quicOnly, "quic", "https"), " server at", listenAddr, ", please don't close it if you are not sure what it is doing.")
 
 		http.HandleFunc("/uploadFile", uploadFileHandler)
 		http.Handle("/", http.FileServer(http.Dir(fileServePath)))
-		log.Fatal(listenAndServe(listenAddr, certFile, keyFile, nil, quicOnly))
+		logStderr.Fatal(listenAndServe(listenAddr, certFile, keyFile, nil, quicOnly))
 	case "proxy":
-		log.Println("Starting http proxy at", listenAddr, ", please don't close it if you are not sure what it is doing.")
-		log.Fatal(listenAndServe(listenAddr, certFile, keyFile, createProxy(), quicOnly))
+		logStdout.Println("Starting http proxy at", listenAddr, ", please don't close it if you are not sure what it is doing.")
+		logStderr.Fatal(listenAndServe(listenAddr, certFile, keyFile, createProxy(), quicOnly))
 	case "relay":
 		args := flag.Args()
 		if len(args) == 0 {
-			log.Fatal("Port mapping is missing.")
+			logStderr.Fatal("Port mapping is missing.")
 		}
-		log.Println("Starting http reverse proxy at", strings.Join(args, " "), ", please don't close it if you are not sure what it is doing.")
+		logStdout.Println("Starting http reverse proxy at", strings.Join(args, " "), ", please don't close it if you are not sure what it is doing.")
 		var wg sync.WaitGroup
 		wg.Add(len(args))
 		for _, a := range args {
 			ss := strings.Split(a, "<->")
 			if len(ss) != 2 {
-				log.Println("Drop invalid port mapping entry", a)
+				logStdout.Println("Drop invalid port mapping entry", a)
 				wg.Done()
 				continue
 			}
@@ -86,27 +93,27 @@ func httpsHandler(quicOnly bool) {
 func httpHandler() {
 	switch workMode {
 	case "server":
-		log.Println("Starting http server at", listenAddr, ", please don't close it if you are not sure what it is doing.")
+		logStdout.Println("Starting http server at", listenAddr, ", please don't close it if you are not sure what it is doing.")
 
 		http.HandleFunc("/uploadFile", uploadFileHandler)
 		http.Handle("/", http.FileServer(http.Dir(fileServePath)))
-		log.Fatal(http.ListenAndServe(listenAddr, nil))
+		logStderr.Fatal(http.ListenAndServe(listenAddr, nil))
 	case "proxy":
-		log.Println("Starting http proxy at", listenAddr, ", please don't close it if you are not sure what it is doing.")
+		logStdout.Println("Starting http proxy at", listenAddr, ", please don't close it if you are not sure what it is doing.")
 
-		log.Fatal(http.ListenAndServe(listenAddr, createProxy()))
+		logStderr.Fatal(http.ListenAndServe(listenAddr, createProxy()))
 	case "relay":
 		args := flag.Args()
 		if len(args) == 0 {
-			log.Fatal("Port mapping is missing.")
+			logStderr.Fatal("Port mapping is missing.")
 		}
-		log.Println("Starting http reverse proxy at", strings.Join(args, " "), ", please don't close it if you are not sure what it is doing.")
+		logStdout.Println("Starting http reverse proxy at", strings.Join(args, " "), ", please don't close it if you are not sure what it is doing.")
 		var wg sync.WaitGroup
 		wg.Add(len(args))
 		for _, a := range args {
 			ss := strings.Split(a, "<->")
 			if len(ss) != 2 {
-				log.Println("Drop invalid port mapping entry", a)
+				logStdout.Println("Drop invalid port mapping entry", a)
 				wg.Done()
 				continue
 			}
@@ -120,7 +127,7 @@ func httpHandler() {
 		}
 		wg.Wait()
 	default:
-		log.Fatal("Unsupported work mode, available values: server, client, proxy")
+		logStderr.Fatal("Unsupported work mode, available values: server, client, proxy")
 	}
 }
 
@@ -171,7 +178,8 @@ func main() {
 		}
 
 		if needDownload(headers, contentLength, outputFile) {
-			log.Printf("downloading %s to %s, isHTTP3Enabled=%t\n", uri, outputFile, isHTTP3)
+			logs := englishPrinter.Sprintf("downloading %s to %s, isHTTP3Enabled=%t\n", uri, outputFile, isHTTP3)
+			logStdout.Println(logs)
 			downloadFileRequest(uri, contentLength, outputFile, isHTTP3)
 		}
 		return
@@ -187,7 +195,7 @@ func main() {
 		}
 		args := flag.Args()
 		for _, f := range args {
-			log.Printf("uploading %s to %s, isHTTP3Enabled=%t\n", f, uri, isHTTP3)
+			logStdout.Printf("uploading %s to %s, isHTTP3Enabled=%t\n", f, uri, isHTTP3)
 			uploadFileRequest(uri, f, isHTTP3)
 		}
 		return
@@ -202,6 +210,6 @@ func main() {
 	case "quic":
 		httpsHandler(true)
 	default:
-		log.Fatal("Unsupported protocol")
+		logStderr.Fatal("Unsupported protocol")
 	}
 }
