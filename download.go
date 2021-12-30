@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sync"
 	"time"
 )
@@ -133,7 +134,11 @@ start:
 				if offset+int64(nr) > max {
 					nr = int(max - offset)
 				}
-				nw, ew := fd.WriteAt(buf[:nr], offset)
+				var nw int = nr
+				var ew error
+				if fd != nil {
+					nw, ew = fd.WriteAt(buf[:nr], offset)
+				}
 				output <- DownloadBlock{
 					offset:      offset,
 					length:      int64(nr),
@@ -194,15 +199,24 @@ func downloadFileRequest(uri string, contentLength int64, filePath string, isHTT
 	if os.ErrNotExist == err {
 		os.MkdirAll(dir, 0755)
 	}
-
-	fd, err = os.OpenFile(filePath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
-	if err != nil {
-		logStderr.Println(err)
-		return err
+	if (runtime.GOOS == "windows" && filePath == "NUL") || (runtime.GOOS != "windows" && filePath == "/dev/null") {
+		logStdout.Println("write to blackhold")
+	} else {
+		fd, err = os.OpenFile(filePath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
+		if err != nil {
+			logStderr.Println(err)
+			return err
+		}
 	}
-	defer fd.Close()
+	defer func() {
+		if fd != nil {
+			fd.Close()
+		}
+	}()
 	if contentLength > 0 {
-		fd.Truncate(contentLength)
+		if fd != nil {
+			fd.Truncate(contentLength)
+		}
 	} else {
 		concurrentThread = 1
 	}
