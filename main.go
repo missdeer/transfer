@@ -30,6 +30,7 @@ var (
 	outputFile         string
 	insecureSkipVerify bool
 	reuseThread        bool
+	autoHTTP3          bool
 	concurrentThread   int
 	retryTimes         int
 	readBufSize        int64
@@ -149,6 +150,7 @@ func main() {
 	flag.Int64VarP(&readBufSize, "readBufSize", "b", 8*1024, "read buffer size ~ [4096, 32768], download mode only")
 	flag.BoolVarP(&insecureSkipVerify, "insecureSkipVerify", "", false, "insecure skip SSL verify")
 	flag.BoolVarP(&reuseThread, "reuseThread", "", true, "reuse thread, download mode only")
+	flag.BoolVarP(&autoHTTP3, "autoHTTP3", "", true, "auto enable HTTP3, download mode only")
 	flag.BoolVarP(&help, "help", "h", false, "show this help message")
 	flag.Parse()
 
@@ -186,7 +188,7 @@ func main() {
 		if err == nil {
 			if strings.ToLower(protocol) == "quic" {
 				isHTTP3 = true
-			} else {
+			} else if autoHTTP3 {
 				uri, isHTTP3, _ = isHTTP3Enabled(uri, headers)
 			}
 			contentLength, _ = getContentLength(headers)
