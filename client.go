@@ -21,6 +21,7 @@ var (
 func getHTTPClient(isHTTP3 bool) *http.Client {
 	if isHTTP3 {
 		return &http.Client{
+			Timeout: time.Second * 30,
 			Transport: &http3.RoundTripper{
 				TLSClientConfig: &tls.Config{
 					InsecureSkipVerify: insecureSkipVerify,
@@ -29,6 +30,7 @@ func getHTTPClient(isHTTP3 bool) *http.Client {
 		}
 	}
 	return &http.Client{
+		Timeout: time.Second * 30,
 		Transport: &http.Transport{
 			TLSClientConfig: &tls.Config{
 				InsecureSkipVerify: insecureSkipVerify,
