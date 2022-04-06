@@ -160,6 +160,9 @@ func main() {
 		flag.PrintDefaults()
 		return
 	}
+	if serverAddr == "" && (workMode == "download" || workMode == "upload") && flag.NArg() == 1 {
+		serverAddr = flag.Arg(0)
+	}
 	switch workMode {
 	case "download":
 		uri := serverAddr
