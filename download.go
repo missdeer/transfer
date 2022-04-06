@@ -200,7 +200,7 @@ func downloadFileRequest(uri string, contentLength int64, filePath string, isHTT
 		os.MkdirAll(dir, 0755)
 	}
 	if (runtime.GOOS == "windows" && filePath == "NUL") || (runtime.GOOS != "windows" && filePath == "/dev/null") {
-		logStdout.Println("write to blackhold")
+		logStdout.Println("write to blackhole")
 	} else {
 		fd, err = os.OpenFile(filePath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
 		if err != nil {
