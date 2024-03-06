@@ -1,8 +1,6 @@
 module github.com/missdeer/transfer
 
-go 1.21
-
-toolchain go1.22.0
+go 1.22
 
 require (
 	github.com/fsnotify/fsnotify v1.7.0
