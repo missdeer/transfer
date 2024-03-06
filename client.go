@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"crypto/tls"
 	"net"
 	"net/http"
@@ -11,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/lucas-clemente/quic-go/http3"
+	"github.com/quic-go/quic-go/http3"
 )
 
 var (
@@ -21,7 +22,6 @@ var (
 func getHTTPClient(isHTTP3 bool) *http.Client {
 	if isHTTP3 {
 		return &http.Client{
-			Timeout: time.Second * 30,
 			Transport: &http3.RoundTripper{
 				TLSClientConfig: &tls.Config{
 					InsecureSkipVerify: insecureSkipVerify,
@@ -30,13 +30,15 @@ func getHTTPClient(isHTTP3 bool) *http.Client {
 		}
 	}
 	return &http.Client{
-		Timeout: time.Second * 30,
 		Transport: &http.Transport{
 			TLSClientConfig: &tls.Config{
 				InsecureSkipVerify: insecureSkipVerify,
 			},
-			Dial: func(network, addr string) (net.Conn, error) {
-				conn, err := net.DialTimeout(network, addr, time.Second*30)
+			DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+				dialer := &net.Dialer{
+					Timeout: time.Second * 30,
+				}
+				conn, err := dialer.DialContext(ctx, network, addr)
 				if err != nil {
 					return conn, err
 				}

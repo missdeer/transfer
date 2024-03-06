@@ -9,7 +9,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/lucas-clemente/quic-go/http3"
+	"github.com/quic-go/quic-go/http3"
 	"github.com/missdeer/transfer/keypair"
 )
 
@@ -78,7 +78,8 @@ func listenAndServe(addr, certFile, keyFile string, handler http.Handler, quicOn
 	}
 
 	quicServer := &http3.Server{
-		Server: httpServer,
+		Addr:      addr,
+		TLSConfig: config,
 	}
 
 	if handler == nil {
