@@ -54,6 +54,21 @@ func getHTTPClient(isHTTP3 bool) *http.Client {
 }
 
 func getContentLength(headers http.Header) (int64, error) {
+	// Try to get content length from Content-Range header first
+	contentRange := headers.Get("Content-Range")
+	if contentRange != "" {
+		// Content-Range format: "bytes 0-0/1234" or "bytes 0-499/1234" or "bytes */1234"
+		// Extract the total length after the slash
+		parts := strings.Split(contentRange, "/")
+		if len(parts) == 2 {
+			expectedLength, err := strconv.ParseInt(strings.TrimSpace(parts[1]), 10, 64)
+			if err == nil {
+				return expectedLength, nil
+			}
+		}
+	}
+
+	// Fallback to Content-Length header
 	contentLength := headers.Get("Content-Length")
 	expectedLength, err := strconv.ParseInt(contentLength, 10, 64)
 	if err != nil {
