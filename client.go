@@ -141,4 +141,20 @@ func SetRequestHeader(req *http.Request) {
 		value := strings.TrimSpace(v[index+1:])
 		req.Header.Set(key, value)
 	}
+	// convert user-agent, cookies, referrer to request header
+	if userAgent != "" {
+		req.Header.Set("User-Agent", userAgent)
+	}
+	if cookie != "" {
+		// variable cookie may be a file path, read it
+		if cookieBytes, err := os.ReadFile(cookie); err == nil {
+			req.Header.Set("Cookie", string(cookieBytes))
+		} else {
+			req.Header.Set("Cookie", cookie)
+		}
+	}
+	if referrer != "" {
+		req.Header.Set("Referer", referrer)
+	}
+
 }

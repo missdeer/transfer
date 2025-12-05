@@ -28,6 +28,9 @@ var (
 	certFile           string
 	keyFile            string
 	outputFile         string
+	referrer           string
+	cookie             string
+	userAgent          string
 	insecureSkipVerify bool
 	reuseThread        bool
 	autoHTTP3          bool
@@ -35,6 +38,7 @@ var (
 	retryTimes         int
 	readBufSize        int64
 	leastTryBufferSize int64
+	continueAt         int64
 	headers            []string
 
 	englishPrinter = message.NewPrinter(language.English)
@@ -147,10 +151,14 @@ func main() {
 	flag.StringVarP(&keyFile, "key", "k", "key.pem", "SSL key file path")
 	flag.IntVarP(&concurrentThread, "thread", "x", 1, "download concurrent thread count, download mode only")
 	flag.IntVarP(&retryTimes, "retry", "r", math.MaxInt, "retry times, if < 0, means infinitely")
-	flag.Int64VarP(&readBufSize, "readBufSize", "b", 8*1024, "read buffer size ~ [4096, 32768], download mode only")
+	flag.Int64VarP(&readBufSize, "readBufSize", "B", 8*1024, "read buffer size ~ [4096, 32768], download mode only")
 	flag.BoolVarP(&insecureSkipVerify, "insecureSkipVerify", "", false, "insecure skip SSL verify")
 	flag.BoolVarP(&reuseThread, "reuseThread", "", true, "reuse thread, download mode only")
 	flag.BoolVarP(&autoHTTP3, "autoHTTP3", "", true, "auto enable HTTP3, download mode only")
+	flag.StringVarP(&referrer, "referrer", "e", "", "Referrer URL, download mode only")
+	flag.StringVarP(&cookie, "cookie", "b", "", "Send cookies from string/file, download mode only")
+	flag.StringVarP(&userAgent, "userAgent", "A", "", "Send User-Agent <name> to server, download mode only")
+	flag.Int64VarP(&continueAt, "continueAt", "C", 0, "Resume downloading from byte position <N>, download mode only")
 	flag.BoolVarP(&help, "help", "h", false, "show this help message")
 	flag.Parse()
 
@@ -187,17 +195,20 @@ func main() {
 		}
 
 		var contentLength int64 = 0
-		headers, err := getHTTPResponseHeader(uri)
+		respHeaders, err := getHTTPResponseHeader(uri)
 		if err == nil {
+			for k, v := range respHeaders {
+				fmt.Println("response header:", k, v)
+			}
 			if strings.ToLower(protocol) == "quic" {
 				isHTTP3 = true
 			} else if autoHTTP3 {
-				uri, isHTTP3, _ = isHTTP3Enabled(uri, headers)
+				uri, isHTTP3, _ = isHTTP3Enabled(uri, respHeaders)
 			}
-			contentLength, _ = getContentLength(headers)
+			contentLength, _ = getContentLength(respHeaders)
 		}
 
-		if needDownload(headers, contentLength, outputFile) {
+		if needDownload(respHeaders, contentLength, outputFile) {
 			logs := englishPrinter.Sprintf("downloading %s to %s, isHTTP3Enabled=%t\n", uri, outputFile, isHTTP3)
 			logStdout.Println(logs)
 			downloadFileRequest(uri, contentLength, outputFile, isHTTP3)
