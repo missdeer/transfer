@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -9,7 +10,16 @@ import (
 	"path/filepath"
 	"runtime"
 	"sync"
+	"sync/atomic"
 	"time"
+)
+
+var (
+	errDownloadStalled        = errors.New("download connection stalled")
+	workStealPollInterval     = time.Second
+	workStealStallTimeout     = 5 * time.Second
+	workStealSlowSampleWindow = 5 * time.Second
+	workStealLowSpeed         = int64(64 * 1024)
 )
 
 // DownloadBlock defines download content
@@ -22,173 +32,389 @@ type DownloadBlock struct {
 
 // DownloadRange defines download progress in a block
 type DownloadRange struct {
-	start   int64
-	end     int64
-	current int64
+	start          int64
+	end            int64
+	current        int64
+	lastProgressAt time.Time
+	sampledAt      time.Time
+	sampledCurrent int64
+	recentSpeed    float64
+	speedMeasured  bool
 }
 
 // DownloadProgress defines download progress total
 type DownloadProgress struct {
 	sync.Mutex
-	progress map[int64]*DownloadRange
+	ranges       map[int64]*DownloadRange
+	minStealSize int64
+	minSlowSteal int64
+	pollInterval time.Duration
+	stallTimeout time.Duration
+	slowWindow   time.Duration
+	lowSpeed     int64
+	changed      chan struct{}
 }
 
-func NewDownloadProgress() *DownloadProgress {
+func NewDownloadProgress(minStealSize int64) *DownloadProgress {
+	if minStealSize < 2 {
+		minStealSize = 2
+	}
+	minSlowSteal := readBufSize * 2
+	if minSlowSteal < 2 {
+		minSlowSteal = 2
+	}
 	return &DownloadProgress{
-		progress: make(map[int64]*DownloadRange),
+		ranges:       make(map[int64]*DownloadRange),
+		minStealSize: minStealSize,
+		minSlowSteal: minSlowSteal,
+		pollInterval: workStealPollInterval,
+		stallTimeout: workStealStallTimeout,
+		slowWindow:   workStealSlowSampleWindow,
+		lowSpeed:     workStealLowSpeed,
+		changed:      make(chan struct{}),
 	}
 }
 
 // addRange add a range to download progress
 func (dp *DownloadProgress) addRange(start, end int64) {
 	dp.Lock()
-	dp.progress[start] = &DownloadRange{
-		start:   start,
-		end:     end,
-		current: start,
+	now := time.Now()
+	dp.ranges[start] = &DownloadRange{
+		start:          start,
+		end:            end,
+		current:        start,
+		lastProgressAt: now,
+		sampledAt:      now,
+		sampledCurrent: start,
 	}
+	dp.notifyLocked()
 	dp.Unlock()
 }
 
 // removeRange remove a range from download progress
-func (dp *DownloadProgress) removeRange(start, end int64) {
+func (dp *DownloadProgress) removeRange(start int64) {
 	dp.Lock()
-	delete(dp.progress, start)
+	if _, ok := dp.ranges[start]; ok {
+		delete(dp.ranges, start)
+		dp.notifyLocked()
+	}
 	dp.Unlock()
 }
 
-// updateRnage update a range in download progress
-func (dp *DownloadProgress) updateRange(start, end, current int64) int64 {
-	dp.Lock()
-	defer dp.Unlock()
-	dp.progress[start].current = current
-	return dp.progress[start].end
+func (dp *DownloadProgress) notifyLocked() {
+	close(dp.changed)
+	dp.changed = make(chan struct{})
 }
 
-// pickLargestUndownloadedRange pick the largest undownloaded range
-func (dp *DownloadProgress) pickLargestUndownloadedRange() (start int64, end int64, ok bool) {
+// updateRange records a worker's progress and returns its current end. The end
+// may move backwards when another worker steals the tail of this range.
+func (dp *DownloadProgress) updateRange(start, current int64) (int64, bool) {
+	dp.Lock()
+	defer dp.Unlock()
+	r, ok := dp.ranges[start]
+	if !ok {
+		return 0, false
+	}
+	if current > r.current {
+		now := time.Now()
+		r.lastProgressAt = now
+		if elapsed := now.Sub(r.sampledAt); elapsed >= dp.slowWindow && elapsed > 0 {
+			r.recentSpeed = float64(current-r.sampledCurrent) / elapsed.Seconds()
+			r.speedMeasured = true
+			r.sampledAt = now
+			r.sampledCurrent = current
+		}
+	}
+	r.current = current
+	return r.end, true
+}
+
+// stealRange splits the largest unfinished range in half and returns its tail.
+// The worker that owns the original range observes the shortened end through
+// updateRange and stops there, so the two workers never intentionally overlap.
+func (dp *DownloadProgress) stealRange() (start int64, end int64, ok bool) {
 	dp.Lock()
 	defer dp.Unlock()
 	var maxRange *DownloadRange
-	for _, r := range progress.progress {
+	for _, r := range dp.ranges {
 		if maxRange == nil || r.end-r.current > maxRange.end-maxRange.current {
-			//englishPrinter.Printf("\nfound a new range from %d to %d, current=%d, left size=%d\n", r.start, r.end, r.current, r.end-r.current)
 			maxRange = r
 		}
 	}
-	if maxRange == nil || maxRange.end-maxRange.current < leastTryBufferSize {
+	if maxRange == nil || maxRange.end-maxRange.current < dp.minStealSize {
 		return 0, 0, false
 	}
 
 	end = maxRange.end
 	start = maxRange.current + (maxRange.end-maxRange.current)/2
-	dp.progress[start] = &DownloadRange{
-		start:   start,
-		end:     end,
-		current: start,
-	}
-	//englishPrinter.Printf("\nresize origin undownloaded range from %d-%d to %d-%d\n", maxRange.start, maxRange.end, maxRange.start, start-1)
-	//englishPrinter.Printf("\npick new undownloaded range from %d-%d, %d ranges left\n", start, end, len(dp.progress))
+	dp.addStolenRangeLocked(start, end)
 	maxRange.end = start
 
 	return start, end, true
 }
 
-var (
-	progress = NewDownloadProgress()
-	fd       *os.File
-)
-
-func downloadFileRequestAt(ctx context.Context, uri string, min int64, max int64, isHTTP3 bool, output chan DownloadBlock, done chan error) error {
-	req, err := http.NewRequest("GET", uri, nil)
-	if err != nil {
-		done <- err
-		return err
+func (dp *DownloadProgress) addStolenRangeLocked(start, end int64) {
+	now := time.Now()
+	dp.ranges[start] = &DownloadRange{
+		start:          start,
+		end:            end,
+		current:        start,
+		lastProgressAt: now,
+		sampledAt:      now,
+		sampledCurrent: start,
 	}
-	SetRequestHeader(req)
-	retry := 1
-	rangeHeader := fmt.Sprintf("bytes=%d-%d", min, max-1) // Add the data for the Range header of the form "bytes=0-100"
-	req.Header.Add("Range", rangeHeader)
+	dp.notifyLocked()
+}
 
-	buf := make([]byte, readBufSize)
-	offset := min
-start:
-	client := getHTTPClient(isHTTP3)
-	resp, err := client.Do(req)
-	if err != nil {
-		if retryTimes < 0 || retry < retryTimes {
-			//englishPrinter.Printf("request bytes=%d-%d error: %+v, retry it %d time\n", min, max-1, err, retry)
-			retry++
-			goto start
+// stealSlowRange uses a smaller split threshold for a connection that has
+// stopped making progress or remained below the low-speed threshold long
+// enough. This lets an idle worker open a fresh connection for the tail.
+func (dp *DownloadProgress) stealSlowRange(now time.Time) (start, end int64, ok bool) {
+	dp.Lock()
+	defer dp.Unlock()
+
+	var candidate *DownloadRange
+	for _, r := range dp.ranges {
+		remaining := r.end - r.current
+		if remaining < dp.minSlowSteal {
+			continue
 		}
-		goto exit
+		stalled := now.Sub(r.lastProgressAt) >= dp.stallTimeout
+		slow := r.speedMeasured && r.recentSpeed < float64(dp.lowSpeed)
+		if !stalled && !slow {
+			continue
+		}
+		if candidate == nil || remaining > candidate.end-candidate.current {
+			candidate = r
+		}
 	}
-	defer resp.Body.Close()
+	if candidate == nil {
+		return 0, 0, false
+	}
+
+	end = candidate.end
+	start = candidate.current + (candidate.end-candidate.current)/2
+	dp.addStolenRangeLocked(start, end)
+	candidate.end = start
+	return start, end, true
+}
+
+func (dp *DownloadProgress) rangeState() (bool, <-chan struct{}) {
+	dp.Lock()
+	defer dp.Unlock()
+	return len(dp.ranges) > 0, dp.changed
+}
+
+// waitAndSteal keeps an otherwise idle worker available while other workers
+// still own ranges. It first uses normal work stealing, then periodically
+// checks whether a stalled or slow connection should be split more eagerly.
+func (dp *DownloadProgress) waitAndSteal(ctx context.Context) (DownloadRange, bool) {
 	for {
+		if start, end, ok := dp.stealRange(); ok {
+			return DownloadRange{start: start, end: end, current: start}, true
+		}
+		hasRanges, changed := dp.rangeState()
+		if !hasRanges {
+			return DownloadRange{}, false
+		}
+
+		timer := time.NewTimer(dp.pollInterval)
 		select {
 		case <-ctx.Done():
-			goto exit
-		default:
-			nr, er := resp.Body.Read(buf)
-			if nr > 0 {
-				if offset+int64(nr) > max {
-					nr = int(max - offset)
-				}
-				var nw int = nr
-				var ew error
-				if fd != nil {
-					nw, ew = fd.WriteAt(buf[:nr], offset)
-				}
-				output <- DownloadBlock{
-					offset:      offset,
-					length:      int64(nr),
-					byteWritten: int64(nw),
-					errWritten:  ew,
-				}
-				if ew != nil {
-					err = ew
-					goto exit
-				}
-				offset += int64(nr)
-				max = progress.updateRange(min, max, offset)
-				if reuseThread && offset >= max {
-					progress.removeRange(min, max)
-					if newMin, newMax, ok := progress.pickLargestUndownloadedRange(); ok {
-						//englishPrinter.Printf("\nend a block from %d to %d, total received bytes: %d, start new block from %d to %d\n", min, max, offset-min, newMin, newMax)
-						downloadFileRequestAt(ctx, uri, newMin, newMax, isHTTP3, output, done)
-						return nil
-					} else {
-						err = er
-						goto exit
-					}
+			if !timer.Stop() {
+				select {
+				case <-timer.C:
+				default:
 				}
 			}
-			if er != nil {
-				if er != io.EOF {
-					if retryTimes < 0 || retry < retryTimes {
-						logs := englishPrinter.Sprintf("\nrequest bytes=%d-%d received %d bytes but got error: %+v, retry it %d time\n", min, max-1, offset-min, er, retry)
-						logStdout.Println(logs)
-						retry++
-						req, err = http.NewRequest("GET", uri, nil)
-						if err != nil {
-							goto exit
-						}
-						SetRequestHeader(req)
-						rangeHeader = fmt.Sprintf("bytes=%d-%d", offset, max-1) // fix new requested range
-						req.Header.Add("Range", rangeHeader)
-						goto start
-					}
-					err = er
+			return DownloadRange{}, false
+		case <-changed:
+			if !timer.Stop() {
+				select {
+				case <-timer.C:
+				default:
 				}
-				goto exit
+			}
+		case now := <-timer.C:
+			if start, end, ok := dp.stealSlowRange(now); ok {
+				return DownloadRange{start: start, end: end, current: start}, true
 			}
 		}
 	}
-exit:
-	logs := englishPrinter.Sprintf("\nend a thread from %d to %d, total received bytes: %d\n", min, max, offset-min)
-	logStdout.Println(logs)
-	done <- err
-	return err
+}
+
+func downloadFileRequestAt(ctx context.Context, uri string, min, max int64, isHTTP3 bool, file *os.File, progress *DownloadProgress, output chan<- DownloadBlock) error {
+	buf := make([]byte, readBufSize)
+	offset := min
+	attempt := 1
+	unbounded := max < 0
+
+	for {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+
+		if !unbounded {
+			currentEnd, ok := progress.updateRange(min, offset)
+			if !ok || offset >= currentEnd {
+				return nil
+			}
+			max = currentEnd
+		}
+
+		requestCtx, cancelRequest := context.WithCancel(ctx)
+		var requestStalled atomic.Bool
+		stallTimeout := workStealStallTimeout
+		if progress != nil {
+			stallTimeout = progress.stallTimeout
+		}
+		stallTimer := time.AfterFunc(stallTimeout, func() {
+			requestStalled.Store(true)
+			cancelRequest()
+		})
+		stopRequest := func() {
+			stallTimer.Stop()
+			cancelRequest()
+		}
+
+		req, err := http.NewRequestWithContext(requestCtx, http.MethodGet, uri, nil)
+		if err != nil {
+			stopRequest()
+			return err
+		}
+		SetRequestHeader(req)
+		if !unbounded {
+			req.Header.Set("Range", fmt.Sprintf("bytes=%d-%d", offset, max-1))
+		}
+
+		resp, err := getHTTPClient(isHTTP3).Do(req)
+		if err != nil {
+			stopRequest()
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
+			if requestStalled.Load() {
+				err = errDownloadStalled
+			}
+			if retryTimes < 0 || attempt < retryTimes {
+				attempt++
+				continue
+			}
+			return err
+		}
+
+		for {
+			nr, readErr := resp.Body.Read(buf)
+			if nr > 0 {
+				stallTimer.Reset(stallTimeout)
+				if !unbounded {
+					currentEnd, ok := progress.updateRange(min, offset)
+					if !ok || offset >= currentEnd {
+						resp.Body.Close()
+						stopRequest()
+						return nil
+					}
+					max = currentEnd
+					if offset+int64(nr) > max {
+						nr = int(max - offset)
+					}
+				}
+
+				if nr > 0 {
+					nw := nr
+					var writeErr error
+					if file != nil {
+						nw, writeErr = file.WriteAt(buf[:nr], offset)
+					}
+					block := DownloadBlock{
+						offset:      offset,
+						length:      int64(nr),
+						byteWritten: int64(nw),
+						errWritten:  writeErr,
+					}
+					select {
+					case output <- block:
+					case <-ctx.Done():
+						resp.Body.Close()
+						stopRequest()
+						return ctx.Err()
+					}
+					if writeErr != nil {
+						resp.Body.Close()
+						stopRequest()
+						return writeErr
+					}
+					if nw != nr {
+						resp.Body.Close()
+						stopRequest()
+						return io.ErrShortWrite
+					}
+
+					offset += int64(nr)
+					if !unbounded {
+						currentEnd, ok := progress.updateRange(min, offset)
+						if !ok || offset >= currentEnd {
+							resp.Body.Close()
+							stopRequest()
+							return nil
+						}
+						max = currentEnd
+					}
+				}
+			}
+
+			if readErr == nil {
+				continue
+			}
+			resp.Body.Close()
+			stopRequest()
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
+			if requestStalled.Load() {
+				readErr = errDownloadStalled
+			}
+			if unbounded && readErr == io.EOF {
+				return nil
+			}
+			if readErr == io.EOF && offset >= max {
+				return nil
+			}
+			if readErr == io.EOF {
+				readErr = io.ErrUnexpectedEOF
+			}
+			if retryTimes < 0 || attempt < retryTimes {
+				logs := englishPrinter.Sprintf("\nrequest bytes=%d-%d received %d bytes but got error: %+v, retry it %d time\n", min, max-1, offset-min, readErr, attempt)
+				logStdout.Println(logs)
+				attempt++
+				break
+			}
+			return readErr
+		}
+	}
+}
+
+func downloadWorker(ctx context.Context, uri string, work DownloadRange, isHTTP3 bool, file *os.File, progress *DownloadProgress, output chan<- DownloadBlock, reuse bool) error {
+	for {
+		start, end := work.start, work.end
+		err := downloadFileRequestAt(ctx, uri, start, end, isHTTP3, file, progress, output)
+		if progress != nil {
+			progress.removeRange(start)
+		}
+		logs := englishPrinter.Sprintf("\nend a block from %d to %d\n", start, end)
+		logStdout.Println(logs)
+		if err != nil {
+			return err
+		}
+		if !reuse || progress == nil {
+			return nil
+		}
+		newWork, ok := progress.waitAndSteal(ctx)
+		if !ok {
+			return nil
+		}
+		work = newWork
+	}
 }
 
 func downloadFileRequest(uri string, contentLength int64, filePath string, isHTTP3 bool) error {
@@ -196,87 +422,124 @@ func downloadFileRequest(uri string, contentLength int64, filePath string, isHTT
 
 	dir := filepath.Dir(filePath)
 	_, err := os.Stat(dir)
-	if os.ErrNotExist == err {
-		os.MkdirAll(dir, 0755)
+	if os.IsNotExist(err) {
+		if err = os.MkdirAll(dir, 0755); err != nil {
+			return err
+		}
 	}
+
+	var file *os.File
 	if (runtime.GOOS == "windows" && filePath == "NUL") || (runtime.GOOS != "windows" && filePath == "/dev/null") {
 		logStdout.Println("write to blackhole")
 	} else {
-		fd, err = os.OpenFile(filePath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
+		file, err = os.OpenFile(filePath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
 		if err != nil {
 			logStderr.Println(err)
 			return err
 		}
 	}
 	defer func() {
-		if fd != nil {
-			fd.Close()
+		if file != nil {
+			file.Close()
 		}
 	}()
 	if contentLength > 0 {
-		if fd != nil {
-			fd.Truncate(contentLength)
+		if file != nil {
+			if err = file.Truncate(contentLength); err != nil {
+				return err
+			}
 		}
-	} else {
-		concurrentThread = 1
 	}
 
-	ctxt, cancel := context.WithCancel(context.Background())
+	if concurrentThread < 1 {
+		return fmt.Errorf("download thread count must be positive")
+	}
 
-	lenSub := contentLength / int64(concurrentThread) // Bytes for each Go-routine
-	diff := contentLength % int64(concurrentThread)   // Get the remaining for the last request
+	workerCount := concurrentThread
+	if contentLength > 0 && int64(workerCount) > contentLength {
+		workerCount = int(contentLength)
+	}
+	if contentLength <= 0 {
+		workerCount = 1
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 	output := make(chan DownloadBlock)
-	done := make(chan error)
-	for i := 0; i < concurrentThread; i++ {
-		min := lenSub * int64(i) // Min range
-		max := min + lenSub      // Max range
+	done := make(chan error, workerCount)
 
-		if i == concurrentThread-1 {
-			max += diff // Add the remaining bytes in the last request
+	var progress *DownloadProgress
+	if contentLength > 0 {
+		progress = NewDownloadProgress(leastTryBufferSize)
+		lenSub := contentLength / int64(workerCount)
+		diff := contentLength % int64(workerCount)
+		works := make([]DownloadRange, workerCount)
+		for i := 0; i < workerCount; i++ {
+			min := lenSub * int64(i)
+			max := min + lenSub
+			if i == workerCount-1 {
+				max += diff
+			}
+			progress.addRange(min, max)
+			works[i] = DownloadRange{start: min, end: max, current: min}
 		}
-
-		ctxtChild, _ := context.WithCancel(ctxt)
-		progress.addRange(min, max)
-		go downloadFileRequestAt(ctxtChild, uri, min, max, isHTTP3, output, done)
+		for _, work := range works {
+			go func() {
+				done <- downloadWorker(ctx, uri, work, isHTTP3, file, progress, output, reuseThread)
+			}()
+		}
+	} else {
+		work := DownloadRange{start: 0, end: -1, current: 0}
+		go func() {
+			done <- downloadWorker(ctx, uri, work, isHTTP3, file, nil, output, false)
+		}()
 	}
 
 	var totalReceived int64
-	for i := 0; i < concurrentThread && (err == nil || err == io.EOF); {
+	var firstErr error
+	for completed := 0; completed < workerCount; {
 		select {
 		case b := <-output:
-			nw := b.byteWritten
-			if nw > 0 {
-				totalReceived += int64(nw)
+			if b.byteWritten > 0 {
+				totalReceived += b.byteWritten
 			}
-			ew := b.errWritten
-			if ew != nil {
-				err = ew
-				break
+			if b.errWritten != nil && firstErr == nil {
+				firstErr = b.errWritten
+				cancel()
 			}
-			if b.length != int64(nw) {
-				err = io.ErrShortWrite
-				break
+			if b.length != b.byteWritten && firstErr == nil {
+				firstErr = io.ErrShortWrite
+				cancel()
 			}
-			tsEnd := time.Now()
-			tsCost := tsEnd.Sub(tsBegin)
-			speed := totalReceived * 1000 / int64(tsCost/time.Millisecond)
+			tsCost := time.Since(tsBegin)
+			elapsedMilliseconds := tsCost.Milliseconds()
+			if elapsedMilliseconds < 1 {
+				elapsedMilliseconds = 1
+			}
+			speed := totalReceived * 1000 / elapsedMilliseconds
 			englishPrinter.Printf("\rreceived and wrote %d/%d bytes to offset %d in %+v at %d B/s", totalReceived, contentLength, b.offset, tsCost, speed)
-		case err = <-done:
-			i++
-			logStdout.Printf("\n%d/%d thread is ended.\n", i, concurrentThread)
+		case workerErr := <-done:
+			completed++
+			if workerErr != nil && workerErr != context.Canceled && firstErr == nil {
+				firstErr = workerErr
+				cancel()
+			}
+			logStdout.Printf("\n%d/%d thread is ended.\n", completed, workerCount)
 		}
 	}
 
-	cancel()
 	fmt.Printf("\n")
-	if err != nil && err != io.EOF {
-		logStderr.Println(err)
+	if firstErr != nil {
+		logStderr.Println(firstErr)
 	} else {
-		tsEnd := time.Now()
-		tsCost := tsEnd.Sub(tsBegin)
-		speed := totalReceived * 1000 / int64(tsCost/time.Millisecond)
+		tsCost := time.Since(tsBegin)
+		elapsedMilliseconds := tsCost.Milliseconds()
+		if elapsedMilliseconds < 1 {
+			elapsedMilliseconds = 1
+		}
+		speed := totalReceived * 1000 / elapsedMilliseconds
 		logs := englishPrinter.Sprintf("%d bytes received and written to %s in %+v at %d B/s\n", totalReceived, filePath, tsCost, speed)
 		logStdout.Println(logs)
 	}
-	return err
+	return firstErr
 }
