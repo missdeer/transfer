@@ -24,5 +24,10 @@ func getHTTPResponseHeader(uri string) (http.Header, error) {
 	// Read and discard the response body (only 1 byte)
 	_, _ = resp.Body.Read(make([]byte, 1))
 
+	if err = checkResponseStatus(resp); err != nil {
+		logStderr.Println(err)
+		return resp.Header, err
+	}
+
 	return resp.Header, nil
 }

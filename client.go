@@ -53,6 +53,24 @@ func getHTTPClient(isHTTP3 bool) *http.Client {
 	}
 }
 
+// httpStatusError reports a response whose body is not the requested content,
+// such as an error page served with 403 or 404.
+type httpStatusError struct {
+	code   int
+	status string
+}
+
+func (e *httpStatusError) Error() string {
+	return "unexpected HTTP status: " + e.status
+}
+
+func checkResponseStatus(resp *http.Response) error {
+	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+		return nil
+	}
+	return &httpStatusError{code: resp.StatusCode, status: resp.Status}
+}
+
 func getContentLength(headers http.Header) (int64, error) {
 	// Try to get content length from Content-Range header first
 	contentRange := headers.Get("Content-Range")

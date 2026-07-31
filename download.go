@@ -303,6 +303,12 @@ func downloadFileRequestAt(ctx context.Context, uri string, min, max int64, isHT
 			return err
 		}
 
+		if statusErr := checkResponseStatus(resp); statusErr != nil {
+			resp.Body.Close()
+			stopRequest()
+			return statusErr
+		}
+
 		for {
 			nr, readErr := resp.Body.Read(buf)
 			if nr > 0 {

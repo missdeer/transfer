@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"log"
 	"math"
@@ -196,6 +197,10 @@ func main() {
 
 		var contentLength int64 = 0
 		respHeaders, err := getHTTPResponseHeader(uri)
+		var statusErr *httpStatusError
+		if errors.As(err, &statusErr) {
+			logStderr.Fatalf("server refused to serve %s: %s", uri, statusErr.status)
+		}
 		if err == nil {
 			for k, v := range respHeaders {
 				fmt.Println("response header:", k, v)
