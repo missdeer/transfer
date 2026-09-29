@@ -24,6 +24,7 @@ var (
 	workMode           string
 	fileServePath      string
 	listenAddr         string
+	interfaceName      string
 	serverAddr         string
 	protocol           string
 	certFile           string
@@ -146,6 +147,7 @@ func main() {
 	flag.StringVarP(&workMode, "mode", "m", "download", "work mode, candidates: server, download, upload, proxy, relay")
 	flag.StringVarP(&fileServePath, "directory", "d", ".", "serve directory path, server mode only")
 	flag.StringVarP(&listenAddr, "listen", "l", ":8080", "listen address, server/proxy mode only")
+	flag.StringVar(&interfaceName, "interface", "", "local network interface name or IP address for outgoing connections")
 	flag.StringVarP(&serverAddr, "connect", "c", "", "upload server address, for example: http://172.16.0.1:8080/uploadFile, download/upload mode only")
 	flag.StringVarP(&outputFile, "output", "o", "", "save downloaded file to local path, leave blank to extract file name from URL path, download mode only")
 	flag.StringVarP(&certFile, "cert", "t", "cert.pem", "SSL certificate file path")
@@ -168,6 +170,9 @@ func main() {
 		fmt.Printf("\n")
 		flag.PrintDefaults()
 		return
+	}
+	if _, err := sourceIPs(interfaceName); err != nil {
+		logStderr.Fatal(err)
 	}
 	if serverAddr == "" && (workMode == "download" || workMode == "upload") && flag.NArg() == 1 {
 		serverAddr = flag.Arg(0)

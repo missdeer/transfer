@@ -1,9 +1,7 @@
 package main
 
 import (
-	"context"
 	"crypto/tls"
-	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -21,12 +19,16 @@ var (
 
 func getHTTPClient(isHTTP3 bool) *http.Client {
 	if isHTTP3 {
-		return &http.Client{
-			Transport: &http3.RoundTripper{
-				TLSClientConfig: &tls.Config{
-					InsecureSkipVerify: insecureSkipVerify,
-				},
+		transport := &http3.RoundTripper{
+			TLSClientConfig: &tls.Config{
+				InsecureSkipVerify: insecureSkipVerify,
 			},
+		}
+		if interfaceName != "" {
+			transport.Dial = dialOutboundQUIC
+		}
+		return &http.Client{
+			Transport: transport,
 		}
 	}
 	return &http.Client{
@@ -34,20 +36,7 @@ func getHTTPClient(isHTTP3 bool) *http.Client {
 			TLSClientConfig: &tls.Config{
 				InsecureSkipVerify: insecureSkipVerify,
 			},
-			DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
-				dialer := &net.Dialer{
-					Timeout: time.Second * 30,
-				}
-				conn, err := dialer.DialContext(ctx, network, addr)
-				if err != nil {
-					return conn, err
-				}
-
-				tcpConn := conn.(*net.TCPConn)
-				tcpConn.SetKeepAlive(false)
-
-				return tcpConn, err
-			},
+			DialContext:       dialOutbound,
 			DisableKeepAlives: true,
 		},
 	}

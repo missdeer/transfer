@@ -46,6 +46,9 @@ func onResponse(ctx *httpproxy.Context, req *http.Request, resp *http.Response) 
 
 func createProxy() *httpproxy.Proxy {
 	prx, _ := httpproxy.NewProxy()
+	if interfaceName != "" {
+		prx.Rt.(*http.Transport).DialContext = dialOutbound
+	}
 
 	// Set handlers.
 	prx.OnError = onError
