@@ -1,7 +1,9 @@
 package main
 
 import (
+	"context"
 	"crypto/tls"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -10,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/quic-go/quic-go"
 	"github.com/quic-go/quic-go/http3"
 )
 
@@ -18,14 +21,20 @@ var (
 )
 
 func getHTTPClient(isHTTP3 bool) *http.Client {
+	return getHTTPClientForInterface(isHTTP3, interfaceName)
+}
+
+func getHTTPClientForInterface(isHTTP3 bool, sourceInterface string) *http.Client {
 	if isHTTP3 {
 		transport := &http3.RoundTripper{
 			TLSClientConfig: &tls.Config{
 				InsecureSkipVerify: insecureSkipVerify,
 			},
 		}
-		if interfaceName != "" {
-			transport.Dial = dialOutboundQUIC
+		if sourceInterface != "" {
+			transport.Dial = func(ctx context.Context, addr string, tlsCfg *tls.Config, cfg *quic.Config) (quic.EarlyConnection, error) {
+				return dialOutboundQUICForInterface(ctx, addr, tlsCfg, cfg, sourceInterface)
+			}
 		}
 		return &http.Client{
 			Transport: transport,
@@ -36,7 +45,9 @@ func getHTTPClient(isHTTP3 bool) *http.Client {
 			TLSClientConfig: &tls.Config{
 				InsecureSkipVerify: insecureSkipVerify,
 			},
-			DialContext:       dialOutbound,
+			DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+				return dialOutboundForInterface(ctx, network, addr, sourceInterface)
+			},
 			DisableKeepAlives: true,
 		},
 	}

@@ -5,6 +5,25 @@ import (
 )
 
 func getHTTPResponseHeader(uri string) (http.Header, error) {
+	return getHTTPResponseHeaderAt(uri, interfaceName)
+}
+
+func getHTTPResponseHeaderForInterfaces(uri string, sourceInterfaces []string) (http.Header, error) {
+	if len(sourceInterfaces) == 0 {
+		return getHTTPResponseHeaderAt(uri, "")
+	}
+	var lastErr error
+	for _, sourceInterface := range sourceInterfaces {
+		headers, err := getHTTPResponseHeaderAt(uri, sourceInterface)
+		if err == nil {
+			return headers, nil
+		}
+		lastErr = err
+	}
+	return nil, lastErr
+}
+
+func getHTTPResponseHeaderAt(uri, sourceInterface string) (http.Header, error) {
 	req, err := http.NewRequest("GET", uri, nil)
 	if err != nil {
 		logStderr.Println(err)
@@ -13,7 +32,7 @@ func getHTTPResponseHeader(uri string) (http.Header, error) {
 
 	SetRequestHeader(req)
 	req.Header.Set("Range", "bytes=0-0")
-	client := getHTTPClient(false)
+	client := getHTTPClientForInterface(false, sourceInterface)
 	resp, err := client.Do(req)
 	if err != nil {
 		logStderr.Println(err)

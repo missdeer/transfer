@@ -73,7 +73,11 @@ func sourceIPsForAddress(name, addr string) ([]net.IP, error) {
 }
 
 func dialOutbound(ctx context.Context, network, addr string) (net.Conn, error) {
-	ips, err := sourceIPsForAddress(interfaceName, addr)
+	return dialOutboundForInterface(ctx, network, addr, interfaceName)
+}
+
+func dialOutboundForInterface(ctx context.Context, network, addr, sourceInterface string) (net.Conn, error) {
+	ips, err := sourceIPsForAddress(sourceInterface, addr)
 	if err != nil {
 		return nil, err
 	}
@@ -102,7 +106,11 @@ func dialOutbound(ctx context.Context, network, addr string) (net.Conn, error) {
 }
 
 func dialOutboundQUIC(ctx context.Context, addr string, tlsCfg *tls.Config, cfg *quic.Config) (quic.EarlyConnection, error) {
-	ips, err := sourceIPsForAddress(interfaceName, addr)
+	return dialOutboundQUICForInterface(ctx, addr, tlsCfg, cfg, interfaceName)
+}
+
+func dialOutboundQUICForInterface(ctx context.Context, addr string, tlsCfg *tls.Config, cfg *quic.Config, sourceInterface string) (quic.EarlyConnection, error) {
+	ips, err := sourceIPsForAddress(sourceInterface, addr)
 	if err != nil {
 		return nil, err
 	}

@@ -21,27 +21,30 @@ const (
 )
 
 var (
-	workMode           string
-	fileServePath      string
-	listenAddr         string
-	interfaceName      string
-	serverAddr         string
-	protocol           string
-	certFile           string
-	keyFile            string
-	outputFile         string
-	referrer           string
-	cookie             string
-	userAgent          string
-	insecureSkipVerify bool
-	reuseThread        bool
-	autoHTTP3          bool
-	concurrentThread   int
-	retryTimes         int
-	readBufSize        int64
-	leastTryBufferSize int64
-	continueAt         int64
-	headers            []string
+	workMode             string
+	fileServePath        string
+	listenAddr           string
+	interfaceName        string
+	interfaceNames       []string
+	interfaceWorkers     []int
+	serverAddr           string
+	protocol             string
+	certFile             string
+	keyFile              string
+	outputFile           string
+	referrer             string
+	cookie               string
+	userAgent            string
+	insecureSkipVerify   bool
+	reuseThread          bool
+	autoHTTP3            bool
+	autoInterfaceWorkers bool
+	concurrentThread     int
+	retryTimes           int
+	readBufSize          int64
+	leastTryBufferSize   int64
+	continueAt           int64
+	headers              []string
 
 	englishPrinter = message.NewPrinter(language.English)
 	logStderr      = log.New(os.Stderr, "", 0)
@@ -54,6 +57,7 @@ func printExamples() {
 	fmt.Println("\ttransfer -m server -l :8888")
 	fmt.Println("\ttransfer -m upload -c http://172.16.0.1:8080/uploadFile ~/file-to-upload")
 	fmt.Println("\ttransfer -m download -c http://172.16.0.1:8080/file-to-download -o ~/file-downloaded")
+	fmt.Println("\ttransfer --interfaces 192.168.233.136,192.168.233.137 -x 16 https://example.com/file")
 	fmt.Println("\ttransfer -m proxy")
 	fmt.Println("\ttransfer -m relay 8080<->http://172.16.0.1:8080 8081<->http://172.16.0.2:8080 8082<->http://172.16.0.3:8080")
 }
@@ -63,6 +67,31 @@ func ternaryOp(condition bool, v1, v2 string) string {
 		return v1
 	}
 	return v2
+}
+
+// downloadInterfaces returns the ordered list of source interfaces configured
+// for downloads. Keep --interface as the fallback for backwards compatibility.
+func downloadInterfaces() []string {
+	if len(interfaceNames) > 0 {
+		interfaces := make([]string, 0, len(interfaceNames))
+		for _, name := range interfaceNames {
+			if name = strings.TrimSpace(name); name != "" {
+				interfaces = append(interfaces, name)
+			}
+		}
+		return interfaces
+	}
+	if interfaceName != "" {
+		return []string{interfaceName}
+	}
+	return nil
+}
+
+func downloadInterfaceForWorker(interfaces []string, worker int) string {
+	if len(interfaces) == 0 {
+		return ""
+	}
+	return interfaces[worker%len(interfaces)]
 }
 
 func httpsHandler(quicOnly bool) {
@@ -148,6 +177,9 @@ func main() {
 	flag.StringVarP(&fileServePath, "directory", "d", ".", "serve directory path, server mode only")
 	flag.StringVarP(&listenAddr, "listen", "l", ":8080", "listen address, server/proxy mode only")
 	flag.StringVar(&interfaceName, "interface", "", "local network interface name or IP address for outgoing connections")
+	flag.StringSliceVar(&interfaceNames, "interfaces", nil, "network interfaces or IP addresses for download connections, separated by commas or repeated")
+	flag.IntSliceVar(&interfaceWorkers, "interface-workers", nil, "maximum download workers per --interfaces entry, for example 1,12; total must not exceed -x")
+	flag.BoolVar(&autoInterfaceWorkers, "auto-interface-workers", true, "probe download interfaces and tune concurrent workers when --interface-workers is not set")
 	flag.StringVarP(&serverAddr, "connect", "c", "", "upload server address, for example: http://172.16.0.1:8080/uploadFile, download/upload mode only")
 	flag.StringVarP(&outputFile, "output", "o", "", "save downloaded file to local path, leave blank to extract file name from URL path, download mode only")
 	flag.StringVarP(&certFile, "cert", "t", "cert.pem", "SSL certificate file path")
@@ -171,7 +203,13 @@ func main() {
 		flag.PrintDefaults()
 		return
 	}
-	if _, err := sourceIPs(interfaceName); err != nil {
+	if workMode == "download" {
+		for _, name := range downloadInterfaces() {
+			if _, err := sourceIPs(name); err != nil {
+				logStderr.Fatal(err)
+			}
+		}
+	} else if _, err := sourceIPs(interfaceName); err != nil {
 		logStderr.Fatal(err)
 	}
 	if serverAddr == "" && (workMode == "download" || workMode == "upload") && flag.NArg() == 1 {
@@ -201,7 +239,8 @@ func main() {
 		}
 
 		var contentLength int64 = 0
-		respHeaders, err := getHTTPResponseHeader(uri)
+		downloadSources := downloadInterfaces()
+		respHeaders, err := getHTTPResponseHeaderForInterfaces(uri, downloadSources)
 		var statusErr *httpStatusError
 		if errors.As(err, &statusErr) {
 			logStderr.Fatalf("server refused to serve %s: %s", uri, statusErr.status)
@@ -221,7 +260,9 @@ func main() {
 		if needDownload(respHeaders, contentLength, outputFile) {
 			logs := englishPrinter.Sprintf("downloading %s to %s, isHTTP3Enabled=%t\n", uri, outputFile, isHTTP3)
 			logStdout.Println(logs)
-			downloadFileRequest(uri, contentLength, outputFile, isHTTP3)
+			if err := downloadFileRequest(uri, contentLength, outputFile, isHTTP3); err != nil {
+				logStderr.Fatal(err)
+			}
 		}
 		return
 	case "upload":
